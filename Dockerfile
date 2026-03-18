@@ -1,5 +1,5 @@
-# v0.8.3-rc1
-# syntax=docker/dockerfile:1.4   ← enables BuildKit cache mounts
+# v0.8.4-rc1
+# syntax=docker/dockerfile:1.4
 
 # Base node image
 FROM node:20-alpine AS node

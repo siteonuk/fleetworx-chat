@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import React, { memo, useEffect, useState } from 'react';
 import TagManager from 'react-gtm-module';
+import ReactMarkdown from 'react-markdown';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { ChangelogModal, CURRENT_VERSION } from './ChangelogModal';
 
-export default function Footer({ className }: { className?: string }) {
+function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
   const localize = useLocalize();
   const [changelogOpen, setChangelogOpen] = useState(false);
@@ -30,9 +30,9 @@ export default function Footer({ className }: { className?: string }) {
     typeof config?.customFooter === 'string'
       ? config.customFooter
       : '[LibreChat ' +
-      Constants.VERSION +
-      '](https://librechat.ai) - ' +
-      localize('com_ui_latest_footer')
+        Constants.VERSION +
+        '](https://librechat.ai) - ' +
+        localize('com_ui_latest_footer')
   ).split('|');
 
   useEffect(() => {
@@ -131,3 +131,8 @@ export default function Footer({ className }: { className?: string }) {
     </div>
   );
 }
+
+const MemoizedFooter = memo(Footer);
+MemoizedFooter.displayName = 'Footer';
+
+export default MemoizedFooter;
