@@ -18,9 +18,38 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
     {
+        version: 'v1.3.1',
+        date: 'April 1, 2026',
+        isCurrent: true,
+        highlights: ['Improved Country Search', 'Consistent UK Formatting', 'Enhanced Supplier Identification'],
+        sections: [
+            {
+                title: 'Search & Data Accuracy',
+                items: [
+                    'Improved country search accuracy by defaulting to active vehicles (is_archived = 0) for fleet summaries.',
+                    'Enhanced spend analysis logic to better handle country-specific filtering via vehicle registration and currency mapping.',
+                    'Improved first-time query understanding for location variations (e.g. "UK" → "United Kingdom").',
+                ],
+            },
+            {
+                title: 'Localization & Formatting',
+                items: [
+                    'Enforced UK date formatting and English (UK) spelling across all system responses.',
+                    'Improved supplier identification logic to reliably match both supplier names and codes.',
+                ],
+            },
+            {
+                title: 'Entity Mapping Fixes',
+                items: [
+                    'Fixed supplier classification (e.g. Driv01) to ensure accurate data filtering in follow-up queries.',
+                ],
+            },
+        ],
+    },
+    {
         version: 'v1.3',
         date: 'March 9, 2026',
-        isCurrent: true,
+        isCurrent: false,
         highlights: ['Long-Term Memory', 'Admin rule management', 'Organisation-wide context'],
         sections: [
             {

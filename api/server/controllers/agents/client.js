@@ -313,8 +313,8 @@ class AgentClient extends BaseClient {
     /** Memory context (user preferences/memories) */
     const withoutKeys = await this.useMemory();
     if (withoutKeys) {
-      const memoryContext = `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
-      sharedRunContextParts.push(memoryContext);
+      // const memoryContext = `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`;
+      // sharedRunContextParts.push(memoryContext);
     }
 
     const sharedRunContext = sharedRunContextParts.join('\n\n');
