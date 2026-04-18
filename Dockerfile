@@ -45,8 +45,8 @@ COPY --chown=node:node . .
 
 # ── Build frontend – Vite build cache persists between builds ──
 RUN --mount=type=cache,id=librechat-vite,target=/app/node_modules/.vite,uid=1000,gid=1000 \
-    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend ; \
-    npm prune --production ; \
+    NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend && \
+    npm prune --production && \
     npm cache clean --force
 
 # Node API setup
