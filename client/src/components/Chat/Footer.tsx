@@ -4,12 +4,14 @@ import ReactMarkdown from 'react-markdown';
 import { Constants } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
-import { ChangelogModal, CURRENT_VERSION } from './ChangelogModal';
+import { ChangelogModal } from './ChangelogModal';
+import useChangelog from '~/hooks/useChangelog';
 
 function Footer({ className }: { className?: string }) {
   const { data: config } = useGetStartupConfig();
   const localize = useLocalize();
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const { currentVersion } = useChangelog();
 
   const privacyPolicy = config?.interface?.privacyPolicy;
   const termsOfService = config?.interface?.termsOfService;
@@ -91,7 +93,7 @@ function Footer({ className }: { className?: string }) {
       }}
       aria-label="View changelog"
     >
-      {CURRENT_VERSION}
+      {currentVersion}
     </button>
   );
 
