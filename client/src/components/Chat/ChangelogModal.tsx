@@ -104,7 +104,7 @@ interface ChangelogModalProps {
 }
 
 export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
-    const { changelog, currentVersion, isLoading } = useChangelog();
+    const { changelog, currentVersion, isLoading, error } = useChangelog();
     if (!isOpen) return null;
 
     return (
@@ -144,6 +144,16 @@ export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
                     {isLoading ? (
                         <div className="flex h-40 items-center justify-center">
                             <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        </div>
+                    ) : error ? (
+                        <div className="flex h-40 flex-col items-center justify-center gap-3 px-4 text-center">
+                            <p className="text-sm text-text-secondary">Failed to load release history.</p>
+                            <button 
+                                onClick={() => window.location.reload()}
+                                className="text-xs font-medium text-primary hover:underline"
+                            >
+                                Try refreshing the page
+                            </button>
                         </div>
                     ) : (
                         <div className="flex flex-col gap-3">

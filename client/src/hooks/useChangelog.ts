@@ -15,13 +15,24 @@ export interface ChangelogEntry {
     };
 }
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const fetcher = async (url: string) => {
+    const res = await fetch(url);
+    if (!res.ok) {
+        throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
+    }
+    return res.json();
+};
 
 export default function useChangelog() {
     const { data: changelog, error, isLoading } = useSWR<ChangelogEntry[]>('/changelog.json', fetcher, {
         revalidateOnFocus: false,
         revalidateOnReconnect: false,
+        shouldRetryOnError: false,
     });
+
+    if (error) {
+        console.error('Changelog fetch error:', error);
+    }
 
     const currentVersion = changelog?.find((e) => e.isCurrent)?.version ?? 'v1.3.1';
 
