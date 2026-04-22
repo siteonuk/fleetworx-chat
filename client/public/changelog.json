@@ -1,8 +1,35 @@
 [
     {
+        "version": "v1.4",
+        "date": "April 22, 2026",
+        "isCurrent": true,
+        "highlights": [
+            "CSV/Excel Data Export",
+            "Interactive Export Prompts",
+            "Custom Column Requests"
+        ],
+        "sections": [
+            {
+                "title": "Data Export Capabilities",
+                "items": [
+                    "The chat bot can now export data tables as CSV or Excel files for easy downloading.",
+                    "When presented with a table of data, the bot will proactively ask if you would like to export it as a CSV or Excel file.",
+                    "You can request a download directly in your original message (e.g., 'collate all costs for Pfizer UK for 2025 and download this as a csv file') to receive the file immediately without additional prompts."
+                ]
+            },
+            {
+                "title": "Custom Column Exports",
+                "items": [
+                    "When confirming an export, you can dynamically request additional data columns to be included in the file (e.g., 'yes, but please add the vehicle model column').",
+                    "The chat bot will generate the file download incorporating the exact additional columns you requested."
+                ]
+            }
+        ]
+    },
+    {
         "version": "v1.3.1",
         "date": "April 1, 2026",
-        "isCurrent": true,
+        "isCurrent": false,
         "highlights": [
             "Improved Country Search",
             "Consistent UK Formatting",

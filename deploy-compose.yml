@@ -30,6 +30,7 @@ services:
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/api/logs
+      - ./files:/app/files
 
   client:
     image: nginx:1.27.0-alpine
