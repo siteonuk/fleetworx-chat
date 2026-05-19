@@ -17,6 +17,7 @@ const {
 const { verify2FAWithTempToken } = require('~/server/controllers/auth/TwoFactorAuthController');
 const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const { loginController } = require('~/server/controllers/auth/LoginController');
+const { ssoController } = require('~/server/controllers/auth/SSOController');
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const middleware = require('~/server/middleware');
@@ -72,5 +73,7 @@ router.post('/2fa/disable', middleware.requireJwtAuth, disable2FA);
 router.post('/2fa/backup/regenerate', middleware.requireJwtAuth, regenerateBackupCodes);
 
 router.get('/graph-token', middleware.requireJwtAuth, graphTokenController);
+
+router.get('/sso', middleware.loginLimiter, ssoController);
 
 module.exports = router;
