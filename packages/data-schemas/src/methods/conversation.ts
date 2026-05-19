@@ -13,6 +13,10 @@ export interface ConversationMethods {
     conversations: { deletedCount?: number };
     messages: { deletedCount?: number };
   }>;
+  deleteOldConversations(maxAgeDays?: number): Promise<{
+    conversations: { deletedCount?: number };
+    messages: { deletedCount?: number };
+  }>;
   saveConvo(
     ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
     data: { conversationId: string; newConversationId?: string; [key: string]: unknown },
@@ -477,10 +481,46 @@ export function createConversationMethods(
     }
   }
 
+  async function deleteOldConversations(maxAgeDays = 30) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const { deleteMessages } = getMessageMethods();
+      const cutoffDate = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+
+      const oldConvos = await Conversation.find(
+        { updatedAt: { $lt: cutoffDate } },
+        'conversationId user',
+      ).lean();
+
+      if (!oldConvos.length) {
+        logger.info('[deleteOldConversations] No conversations older than %d days found', maxAgeDays);
+        return { conversations: { deletedCount: 0 }, messages: { deletedCount: 0 } };
+      }
+
+      const conversationIds = oldConvos.map((c) => c.conversationId);
+
+      const convoResult = await Conversation.deleteMany({ updatedAt: { $lt: cutoffDate } });
+      const messageResult = await deleteMessages({ conversationId: { $in: conversationIds } });
+
+      logger.info(
+        '[deleteOldConversations] Deleted %d conversations and %d messages older than %d days',
+        convoResult.deletedCount,
+        messageResult.deletedCount,
+        maxAgeDays,
+      );
+
+      return { conversations: convoResult, messages: messageResult };
+    } catch (error) {
+      logger.error('[deleteOldConversations] Error deleting old conversations', error);
+      throw new Error('Error deleting old conversations');
+    }
+  }
+
   return {
     getConvoFiles,
     searchConversation,
     deleteNullOrEmptyConversations,
+    deleteOldConversations,
     saveConvo,
     bulkSaveConvos,
     getConvosByCursor,

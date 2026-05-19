@@ -36,6 +36,7 @@ const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
+const { startScheduledCleanup } = require('./services/cleanup');
 const routes = require('./routes');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
@@ -228,6 +229,8 @@ const startServer = async () => {
       await initializeOAuthReconnectManager();
     });
     await checkMigrations();
+
+    startScheduledCleanup();
 
     // Configure stream services (auto-detects Redis from USE_REDIS env var)
     const streamServices = createStreamServices();

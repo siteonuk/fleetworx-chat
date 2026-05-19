@@ -28,6 +28,7 @@ import {
 } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
+import useInactivityLogout, { isInactivityExpired, clearLastActivity } from './useInactivityLogout';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -165,6 +166,8 @@ const AuthContextProvider = ({
     [logoutUser],
   );
 
+  useInactivityLogout(isAuthenticated, logout);
+
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
 
   const login = (data: t.TLoginUser) => {
@@ -177,6 +180,11 @@ const AuthContextProvider = ({
       return;
     }
     if (isExternalRedirectRef.current) {
+      return;
+    }
+    if (isInactivityExpired()) {
+      clearLastActivity();
+      navigate(buildLoginRedirectUrl());
       return;
     }
     refreshToken.mutate(undefined, {
