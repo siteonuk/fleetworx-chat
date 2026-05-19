@@ -1,5 +1,6 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
+const { getMemoryUserId } = require('~/server/utils/sharedMemory');
 const { getBufferString, HumanMessage } = require('@langchain/core/messages');
 const {
   createRun,
@@ -534,7 +535,7 @@ class AgentClient extends BaseClient {
       tokenLimit: memoryConfig.tokenLimit,
     };
 
-    const userId = this.options.req.user.id + '';
+    const userId = getMemoryUserId(this.options.req.user);
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
     const streamId = this.options.req?._resumableStreamId || null;

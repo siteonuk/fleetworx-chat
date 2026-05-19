@@ -10,6 +10,7 @@ const {
   setMemory,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
+const { getMemoryUserId } = require('~/server/utils/sharedMemory');
 
 const router = express.Router();
 
@@ -50,7 +51,8 @@ router.use(requireJwtAuth);
  */
 router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
   try {
-    const memories = await getAllUserMemories(req.user.id);
+    const memoryUserId = getMemoryUserId(req.user);
+    const memories = await getAllUserMemories(memoryUserId);
 
     const sortedMemories = memories.sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
@@ -116,9 +118,10 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
   }
 
   try {
+    const memoryUserId = getMemoryUserId(req.user);
     const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
 
-    const memories = await getAllUserMemories(req.user.id);
+    const memories = await getAllUserMemories(memoryUserId);
 
     const appConfig = req.config;
     const memoryConfig = appConfig?.memory;
@@ -137,7 +140,7 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
     }
 
     const result = await createMemory({
-      userId: req.user.id,
+      userId: memoryUserId,
       key: key.trim(),
       value: value.trim(),
       tokenCount,
@@ -147,7 +150,7 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
       return res.status(500).json({ error: 'Failed to create memory.' });
     }
 
-    const updatedMemories = await getAllUserMemories(req.user.id);
+    const updatedMemories = await getAllUserMemories(memoryUserId);
     const newMemory = updatedMemories.find((m) => m.key === key.trim());
 
     res.status(201).json({ created: true, memory: newMemory });
@@ -222,9 +225,10 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
   }
 
   try {
+    const memoryUserId = getMemoryUserId(req.user);
     const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
 
-    const memories = await getAllUserMemories(req.user.id);
+    const memories = await getAllUserMemories(memoryUserId);
     const existingMemory = memories.find((m) => m.key === urlKey);
 
     if (!existingMemory) {
@@ -238,7 +242,7 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
       }
 
       const createResult = await createMemory({
-        userId: req.user.id,
+        userId: memoryUserId,
         key: newKey,
         value,
         tokenCount,
@@ -248,13 +252,13 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
         return res.status(500).json({ error: 'Failed to create new memory.' });
       }
 
-      const deleteResult = await deleteMemory({ userId: req.user.id, key: urlKey });
+      const deleteResult = await deleteMemory({ userId: memoryUserId, key: urlKey });
       if (!deleteResult.ok) {
         return res.status(500).json({ error: 'Failed to delete old memory.' });
       }
     } else {
       const result = await setMemory({
-        userId: req.user.id,
+        userId: memoryUserId,
         key: newKey,
         value,
         tokenCount,
@@ -265,7 +269,7 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
       }
     }
 
-    const updatedMemories = await getAllUserMemories(req.user.id);
+    const updatedMemories = await getAllUserMemories(memoryUserId);
     const updatedMemory = updatedMemories.find((m) => m.key === newKey);
 
     res.json({ updated: true, memory: updatedMemory });
@@ -283,7 +287,8 @@ router.delete('/:key', checkMemoryDelete, async (req, res) => {
   const { key } = req.params;
 
   try {
-    const result = await deleteMemory({ userId: req.user.id, key });
+    const memoryUserId = getMemoryUserId(req.user);
+    const result = await deleteMemory({ userId: memoryUserId, key });
 
     if (!result.ok) {
       return res.status(404).json({ error: 'Memory not found.' });
