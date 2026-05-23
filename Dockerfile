@@ -1,4 +1,4 @@
-# v0.8.3-rc1
+# v0.8.6-rc1
 # syntax=docker/dockerfile:1.4   ← enables BuildKit cache mounts
 
 # Base node image
@@ -17,6 +17,8 @@ RUN uv --version
 
 # Set configurable max-old-space-size with default
 ARG NODE_MAX_OLD_SPACE_SIZE=6144
+ARG NPM_CI_TIMEOUT_SECONDS=1500
+ARG NPM_CI_ATTEMPTS=2
 
 RUN mkdir -p /app && chown node:node /app
 WORKDIR /app
@@ -38,7 +40,17 @@ RUN --mount=type=cache,id=librechat-npm,target=/root/.npm,uid=1000,gid=1000 \
     npm config set fetch-retry-maxtimeout 600000 ; \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
-    npm ci --no-audit
+    attempt=1 ; \
+    until timeout "$NPM_CI_TIMEOUT_SECONDS" npm ci --no-audit ; do \
+        status=$? ; \
+        if [ "$attempt" -ge "$NPM_CI_ATTEMPTS" ]; then \
+            exit "$status" ; \
+        fi ; \
+        echo "npm ci --no-audit failed with exit code $status; retrying attempt $((attempt + 1))/$NPM_CI_ATTEMPTS" ; \
+        attempt=$((attempt + 1)) ; \
+        npm cache clean --force || true ; \
+        sleep 10 ; \
+    done
 
 # ── Copy source ──
 COPY --chown=node:node . .
