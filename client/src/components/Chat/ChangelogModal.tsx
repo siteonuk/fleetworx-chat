@@ -47,7 +47,25 @@ function ChangelogCard({ entry, defaultOpen = false }: ChangelogCardProps) {
             >
                 <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
                     <VersionBadge version={entry.version} isCurrent={entry.isCurrent} />
-                    <span className="truncate text-sm font-medium text-text-primary">{entry.date}</span>
+                    <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+                        {entry.devDate && (
+                            <span className="truncate text-sm text-text-secondary">
+                                <span className="font-medium text-text-primary">{entry.devDate}</span>
+                                <span className="ml-1 text-xs opacity-60">(Dev)</span>
+                            </span>
+                        )}
+                        {entry.date ? (
+                            <span className="truncate text-sm text-text-secondary">
+                                <span className="font-medium text-text-primary">{entry.date}</span>
+                                <span className="ml-1 text-xs opacity-60">(Live)</span>
+                            </span>
+                        ) : !entry.devDate ? null : (
+                            <span className="truncate text-xs italic text-text-secondary">Pending release</span>
+                        )}
+                        {!entry.devDate && entry.date && (
+                            <span className="truncate text-sm font-medium text-text-primary">{entry.date}</span>
+                        )}
+                    </div>
                 </div>
                 <div className="ml-2 flex shrink-0 items-center">
                     {open ? (
