@@ -1,12 +1,22 @@
+const mongoose = require('mongoose');
 const { SystemRoles } = require('librechat-data-provider');
 
-const SHARED_ADMIN_MEMORY_ID = 'admin_shared_memory';
+async function getAdminUserIds() {
+  const User = mongoose.models.User;
+  const admins = await User.find({ role: SystemRoles.ADMIN }, { _id: 1 }).lean();
+  return admins.map((a) => a._id);
+}
 
 function getMemoryUserId(user) {
-  if (user.role === SystemRoles.ADMIN) {
-    return SHARED_ADMIN_MEMORY_ID;
-  }
   return user.id;
 }
 
-module.exports = { getMemoryUserId, SHARED_ADMIN_MEMORY_ID };
+async function getMemoryQueryFilter(user) {
+  if (user.role === SystemRoles.ADMIN) {
+    const adminIds = await getAdminUserIds();
+    return { userId: { $in: adminIds } };
+  }
+  return { userId: user.id };
+}
+
+module.exports = { getMemoryUserId, getMemoryQueryFilter, getAdminUserIds };

@@ -103,11 +103,12 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
    * Gets all memory entries for a user
    */
   async function getAllUserMemories(
-    userId: string | Types.ObjectId,
+    userId: string | Types.ObjectId | (string | Types.ObjectId)[],
   ): Promise<t.IMemoryEntryLean[]> {
     try {
       const MemoryEntry = mongoose.models.MemoryEntry;
-      return (await MemoryEntry.find({ userId }).lean()) as t.IMemoryEntryLean[];
+      const filter = Array.isArray(userId) ? { userId: { $in: userId } } : { userId };
+      return (await MemoryEntry.find(filter).lean()) as t.IMemoryEntryLean[];
     } catch (error) {
       throw new Error(
         `Failed to get all memories: ${error instanceof Error ? error.message : 'Unknown error'}`,

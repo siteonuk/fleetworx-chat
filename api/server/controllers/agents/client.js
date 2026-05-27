@@ -48,6 +48,7 @@ const {
 const {
   Constants,
   Permissions,
+  SystemRoles,
   VisionModes,
   ContentTypes,
   EModelEndpoint,
@@ -63,6 +64,7 @@ const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
+const { getAdminUserIds } = require('~/server/utils/sharedMemory');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
 
@@ -533,12 +535,14 @@ class AgentClient extends BaseClient {
       return;
     }
 
-    const userId = this.options.req.user.id + '';
+    const userId = user.id + '';
+    const memoryReadIds =
+      user.role === SystemRoles.ADMIN ? await getAdminUserIds() : userId;
     this.processMemory = undefined;
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withoutKeys } = await db.getFormattedMemories({ userId });
+        const { withoutKeys } = await db.getFormattedMemories({ userId: memoryReadIds });
         return withoutKeys;
       } catch (error) {
         logger.error(
@@ -642,6 +646,7 @@ class AgentClient extends BaseClient {
     const streamId = this.options.req?._resumableStreamId || null;
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
+      memoryReadIds,
       config,
       messageId,
       streamId,

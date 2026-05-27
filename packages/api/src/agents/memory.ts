@@ -507,6 +507,7 @@ ${memory ?? 'No existing memories'}`;
 export async function createMemoryProcessor({
   res,
   userId,
+  memoryReadIds,
   messageId,
   memoryMethods,
   conversationId,
@@ -518,6 +519,7 @@ export async function createMemoryProcessor({
   messageId: string;
   conversationId: string;
   userId: string | ObjectId;
+  memoryReadIds?: string | ObjectId | (string | ObjectId)[];
   memoryMethods: RequiredMemoryMethods;
   config?: MemoryConfig;
   streamId?: string | null;
@@ -527,7 +529,7 @@ export async function createMemoryProcessor({
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
   const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
-    userId,
+    userId: memoryReadIds ?? userId,
   });
 
   return [
