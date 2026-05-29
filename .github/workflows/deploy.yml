@@ -5,6 +5,13 @@ on:
     branches:
       - develop
 
+env:
+  SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+  ENVIRONMENT: Dev
+  IMAGE_TAG: latest-dev
+  SERVER_PATH: /var/www/fleetworx_ai/chat-dev.fleetworx.net
+  HEALTH_PORT: 3091
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -13,6 +20,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ── Notify: Deploy Started ─────────────────────────────────────────
+      - name: 🔔 Slack — Deploy started
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
+            "blocks": [
+              {"type":"header","text":{"type":"plain_text","text":"🚀 Deploy Started — Fleetworx Chat ('"$ENVIRONMENT"')"}},
+              {"type":"section","fields":[
+                {"type":"mrkdwn","text":"*Branch:*\n`'"${{ github.ref_name }}"'`"},
+                {"type":"mrkdwn","text":"*Commit:*\n`'"${{ github.sha }}"'`"},
+                {"type":"mrkdwn","text":"*Author:*\n'"${{ github.actor }}"'"},
+                {"type":"mrkdwn","text":"*Message:*\n'"$(echo "${{ github.event.head_commit.message }}" | head -1)"'"}
+              ]},
+              {"type":"context","elements":[{"type":"mrkdwn","text":"⏳ Building Docker image..."}]}
+            ]
+          }'
+
+      # ── Build & Push ───────────────────────────────────────────────────
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -26,10 +50,19 @@ jobs:
             --platform linux/amd64 \
             -f Dockerfile.multi \
             --target api-build \
-            -t ghcr.io/siteonuk/fleetworx-chat:latest-dev \
+            -t ghcr.io/siteonuk/fleetworx-chat:$IMAGE_TAG \
             .
-          docker push ghcr.io/siteonuk/fleetworx-chat:latest-dev
+          docker push ghcr.io/siteonuk/fleetworx-chat:$IMAGE_TAG
 
+      - name: 🔔 Slack — Image built
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
+            "blocks": [
+              {"type":"context","elements":[{"type":"mrkdwn","text":"📦 Docker image built & pushed — *'"$ENVIRONMENT"'*  |  ⏳ Deploying to server..."}]}
+            ]
+          }'
+
+      # ── Deploy ─────────────────────────────────────────────────────────
       - name: Set up SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -38,16 +71,58 @@ jobs:
       - name: Deploy to server via SSH
         run: |
           ssh -o StrictHostKeyChecking=no root@78.129.143.28 \
-            "cd /var/www/fleetworx_ai/chat-dev.fleetworx.net \
+            "cd $SERVER_PATH \
             && docker compose pull \
             && docker compose up -d"
 
+      - name: 🔔 Slack — Container deployed
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
+            "blocks": [
+              {"type":"context","elements":[{"type":"mrkdwn","text":"🐳 Container updated — *'"$ENVIRONMENT"'*  |  ⏳ Verifying health..."}]}
+            ]
+          }'
+
+      # ── Verify ─────────────────────────────────────────────────────────
       - name: Verify deployment
         run: |
           echo "Waiting for services to start..."
           sleep 30
           ssh -o StrictHostKeyChecking=no root@78.129.143.28 \
-            "cd /var/www/fleetworx_ai/chat-dev.fleetworx.net \
+            "cd $SERVER_PATH \
             && docker compose ps \
-            && echo 'Checking health endpoint on port 3081...' \
-            && curl -f http://localhost:3081/health || (echo 'Health check failed, checking port 8000 as fallback...' && curl -f http://localhost:8000/health)"
+            && curl -f --retry 3 --retry-delay 5 http://localhost:$HEALTH_PORT/health"
+
+      # ── Notify: Success ────────────────────────────────────────────────
+      - name: 🔔 Slack — Deploy success
+        if: success()
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
+            "blocks": [
+              {"type":"header","text":{"type":"plain_text","text":"✅ Deploy Successful — Fleetworx Chat ('"$ENVIRONMENT"')"}},
+              {"type":"section","fields":[
+                {"type":"mrkdwn","text":"*Branch:*\n`'"${{ github.ref_name }}"'`"},
+                {"type":"mrkdwn","text":"*Author:*\n'"${{ github.actor }}"'"},
+                {"type":"mrkdwn","text":"*Commit:*\n'"$(echo "${{ github.event.head_commit.message }}" | head -1)"'"},
+                {"type":"mrkdwn","text":"*Health:*\n💚 Passing"}
+              ]},
+              {"type":"context","elements":[{"type":"mrkdwn","text":"📦 `ghcr.io/siteonuk/fleetworx-chat:'"$IMAGE_TAG"'`"}]}
+            ]
+          }'
+
+      # ── Notify: Failure ────────────────────────────────────────────────
+      - name: 🔔 Slack — Deploy failed
+        if: failure()
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
+            "blocks": [
+              {"type":"header","text":{"type":"plain_text","text":"❌ Deploy Failed — Fleetworx Chat ('"$ENVIRONMENT"')"}},
+              {"type":"section","fields":[
+                {"type":"mrkdwn","text":"*Branch:*\n`'"${{ github.ref_name }}"'`"},
+                {"type":"mrkdwn","text":"*Author:*\n'"${{ github.actor }}"'"},
+                {"type":"mrkdwn","text":"*Commit:*\n'"$(echo "${{ github.event.head_commit.message }}" | head -1)"'"},
+                {"type":"mrkdwn","text":"*Action:*\n<'"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'|View Logs>"}
+              ]},
+              {"type":"context","elements":[{"type":"mrkdwn","text":"🔴 Check the workflow logs for details"}]}
+            ]
+          }'

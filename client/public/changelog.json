@@ -1,8 +1,43 @@
 [
     {
+        "version": "v1.5",
+        "devDate": "May 23, 2026",
+        "date": "May 29, 2026",
+        "isCurrent": true,
+        "highlights": [
+            "Single Sign-On (SSO)",
+            "Daily Chat Cleanup",
+            "Inactivity Auto-Logout"
+        ],
+        "sections": [
+            {
+                "title": "Single Sign-On (SSO)",
+                "items": [
+                    "Users can now be seamlessly logged into the chat platform directly from fleetworx.net without needing separate credentials.",
+                    "Simply click through from fleetworx.net and you will be automatically signed in — no extra login required.",
+                    "New users are automatically set up on first visit with the correct access level based on their fleetworx.net role."
+                ]
+            },
+            {
+                "title": "Daily Chat Cleanup",
+                "items": [
+                    "Conversations older than 30 days are now automatically cleaned up to keep the platform tidy and performant.",
+                    "Old and inactive chat threads are removed on a scheduled basis, ensuring a clutter-free experience."
+                ]
+            },
+            {
+                "title": "Inactivity Auto-Logout",
+                "items": [
+                    "Users are automatically logged out after 5 hours of inactivity for improved security.",
+                    "This ensures unattended sessions do not remain open, protecting sensitive fleet data."
+                ]
+            }
+        ]
+    },
+    {
         "version": "v1.4",
         "date": "April 22, 2026",
-        "isCurrent": true,
+        "isCurrent": false,
         "highlights": [
             "CSV/Excel Data Export",
             "Interactive Export Prompts",

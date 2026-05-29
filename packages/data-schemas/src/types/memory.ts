@@ -34,7 +34,7 @@ export interface DeleteMemoryParams {
 }
 
 export interface GetFormattedMemoriesParams {
-  userId: string | Types.ObjectId;
+  userId: string | Types.ObjectId | (string | Types.ObjectId)[];
 }
 
 // Result interfaces

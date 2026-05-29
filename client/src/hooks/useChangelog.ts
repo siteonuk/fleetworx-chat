@@ -3,6 +3,7 @@ import useSWR from 'swr';
 export interface ChangelogEntry {
     version: string;
     date: string;
+    devDate?: string;
     isCurrent?: boolean;
     highlights: string[];
     sections?: {

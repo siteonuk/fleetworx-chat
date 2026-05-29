@@ -1,6 +1,6 @@
 const express = require('express');
 const { Tokenizer, generateCheckAccess } = require('@librechat/api');
-const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { PermissionTypes, Permissions, SystemRoles } = require('librechat-data-provider');
 const {
   getAllUserMemories,
   toggleUserMemories,
@@ -10,6 +10,7 @@ const {
   setMemory,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
+const { getAdminUserIds } = require('~/server/utils/sharedMemory');
 
 const router = express.Router();
 
@@ -50,7 +51,9 @@ router.use(requireJwtAuth);
  */
 router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
   try {
-    const memories = await getAllUserMemories(req.user.id);
+    const memoryUserIds =
+      req.user.role === SystemRoles.ADMIN ? await getAdminUserIds() : req.user.id;
+    const memories = await getAllUserMemories(memoryUserIds);
 
     const sortedMemories = memories.sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
@@ -116,9 +119,12 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
   }
 
   try {
+    const memoryUserId = req.user.id;
+    const memoryReadIds =
+      req.user.role === SystemRoles.ADMIN ? await getAdminUserIds() : memoryUserId;
     const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
 
-    const memories = await getAllUserMemories(req.user.id);
+    const memories = await getAllUserMemories(memoryReadIds);
 
     const appConfig = req.config;
     const memoryConfig = appConfig?.memory;
@@ -137,7 +143,7 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
     }
 
     const result = await createMemory({
-      userId: req.user.id,
+      userId: memoryUserId,
       key: key.trim(),
       value: value.trim(),
       tokenCount,
@@ -147,7 +153,7 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
       return res.status(500).json({ error: 'Failed to create memory.' });
     }
 
-    const updatedMemories = await getAllUserMemories(req.user.id);
+    const updatedMemories = await getAllUserMemories(memoryReadIds);
     const newMemory = updatedMemories.find((m) => m.key === key.trim());
 
     res.status(201).json({ created: true, memory: newMemory });
@@ -222,14 +228,18 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
   }
 
   try {
+    const memoryReadIds =
+      req.user.role === SystemRoles.ADMIN ? await getAdminUserIds() : req.user.id;
     const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
 
-    const memories = await getAllUserMemories(req.user.id);
+    const memories = await getAllUserMemories(memoryReadIds);
     const existingMemory = memories.find((m) => m.key === urlKey);
 
     if (!existingMemory) {
       return res.status(404).json({ error: 'Memory not found.' });
     }
+
+    const ownerId = existingMemory.userId;
 
     if (newKey !== urlKey) {
       const keyExists = memories.find((m) => m.key === newKey);
@@ -238,7 +248,7 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
       }
 
       const createResult = await createMemory({
-        userId: req.user.id,
+        userId: ownerId,
         key: newKey,
         value,
         tokenCount,
@@ -248,13 +258,13 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
         return res.status(500).json({ error: 'Failed to create new memory.' });
       }
 
-      const deleteResult = await deleteMemory({ userId: req.user.id, key: urlKey });
+      const deleteResult = await deleteMemory({ userId: ownerId, key: urlKey });
       if (!deleteResult.ok) {
         return res.status(500).json({ error: 'Failed to delete old memory.' });
       }
     } else {
       const result = await setMemory({
-        userId: req.user.id,
+        userId: ownerId,
         key: newKey,
         value,
         tokenCount,
@@ -265,7 +275,7 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
       }
     }
 
-    const updatedMemories = await getAllUserMemories(req.user.id);
+    const updatedMemories = await getAllUserMemories(memoryReadIds);
     const updatedMemory = updatedMemories.find((m) => m.key === newKey);
 
     res.json({ updated: true, memory: updatedMemory });
@@ -283,7 +293,16 @@ router.delete('/:key', checkMemoryDelete, async (req, res) => {
   const { key } = req.params;
 
   try {
-    const result = await deleteMemory({ userId: req.user.id, key });
+    const memoryReadIds =
+      req.user.role === SystemRoles.ADMIN ? await getAdminUserIds() : req.user.id;
+    const memories = await getAllUserMemories(memoryReadIds);
+    const existingMemory = memories.find((m) => m.key === key);
+
+    if (!existingMemory) {
+      return res.status(404).json({ error: 'Memory not found.' });
+    }
+
+    const result = await deleteMemory({ userId: existingMemory.userId, key });
 
     if (!result.ok) {
       return res.status(404).json({ error: 'Memory not found.' });
