@@ -10,7 +10,7 @@ env:
   ENVIRONMENT: Dev
   IMAGE_TAG: latest-dev
   SERVER_PATH: /var/www/fleetworx_ai/chat-dev.fleetworx.net
-  HEALTH_PORT: 3081
+  HEALTH_PORT: 3091
 
 jobs:
   build-and-deploy:
