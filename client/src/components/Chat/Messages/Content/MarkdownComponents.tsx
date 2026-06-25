@@ -3,11 +3,12 @@ import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
 import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
+import FleetworxChart from '~/components/Messages/Content/Chart';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
-import { handleDoubleClick, triggerDownload } from '~/utils';
+import { handleDoubleClick, triggerDownload, extractContent } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -39,10 +40,11 @@ export const code: React.ElementType = memo(function MarkdownCode({
   const lang = match && match[1];
   const isMath = lang === 'math';
   const isMermaid = lang === 'mermaid';
+  const isChart = lang === 'chart';
   const isSingleLine = isSingleLineCode(children);
 
   const { getNextIndex, resetCounter } = useCodeBlockContext();
-  const blockIndex = useRef(getNextIndex(isMath || isMermaid || isSingleLine)).current;
+  const blockIndex = useRef(getNextIndex(isMath || isMermaid || isChart || isSingleLine)).current;
 
   useEffect(() => {
     resetCounter();
@@ -50,8 +52,11 @@ export const code: React.ElementType = memo(function MarkdownCode({
 
   if (isMath) {
     return <>{children}</>;
+  } else if (isChart) {
+    const content = typeof children === 'string' ? children : extractContent(children);
+    return <FleetworxChart>{content}</FleetworxChart>;
   } else if (isMermaid) {
-    const content = typeof children === 'string' ? children : String(children);
+    const content = typeof children === 'string' ? children : extractContent(children);
     return (
       <MermaidErrorBoundary code={content}>
         <Mermaid id={`mermaid-${blockIndex}`}>{content}</Mermaid>
@@ -85,8 +90,11 @@ export const codeNoExecution: React.ElementType = memo(function MarkdownCodeNoEx
 
   if (lang === 'math') {
     return children;
+  } else if (lang === 'chart') {
+    const content = typeof children === 'string' ? children : extractContent(children);
+    return <FleetworxChart>{content}</FleetworxChart>;
   } else if (lang === 'mermaid') {
-    const content = typeof children === 'string' ? children : String(children);
+    const content = typeof children === 'string' ? children : extractContent(children);
     return <Mermaid>{content}</Mermaid>;
   } else if (isSingleLineCode(children)) {
     return (

@@ -1,9 +1,45 @@
 [
     {
+        "version": "v1.6",
+        "devDate": "June 9, 2026",
+        "date": "",
+        "isCurrent": true,
+        "highlights": [
+            "Charts on Demand",
+            "Excel Export with Data",
+            "Conversational Follow-ups"
+        ],
+        "sections": [
+            {
+                "title": "Charts on Demand",
+                "items": [
+                    "Ask for a bar, pie, line, or doughnut chart of your fleet data and see it rendered right in the conversation.",
+                    "Simply describe what you'd like to visualise — the chatbot picks the best chart type and renders it instantly.",
+                    "Supports all common chart types: bar, pie, line, and doughnut — just ask."
+                ]
+            },
+            {
+                "title": "Excel Export with Data",
+                "items": [
+                    "Every chart comes with a one-click Excel download containing the chart and the source data.",
+                    "Re-cut the data your way — the export includes the full dataset behind the visualisation, ready for your own analysis."
+                ]
+            },
+            {
+                "title": "Conversational Follow-ups",
+                "items": [
+                    "Change your mind mid-flow — say \"now show that as a bar chart\", \"break it down by country\", or \"export that\" and it keeps the context.",
+                    "No need to repeat your original question — the chatbot remembers what you asked and adapts on the fly.",
+                    "Chain multiple refinements naturally: filter, re-chart, and export all within the same conversation."
+                ]
+            }
+        ]
+    },
+    {
         "version": "v1.5",
         "devDate": "May 23, 2026",
         "date": "May 29, 2026",
-        "isCurrent": true,
+        "isCurrent": false,
         "highlights": [
             "Single Sign-On (SSO)",
             "Daily Chat Cleanup",
