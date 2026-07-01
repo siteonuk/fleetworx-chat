@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -12,6 +12,8 @@ import {
   Legend,
   Filler,
 } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
+import { ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
 import { Bar, Pie, Line, Doughnut } from 'react-chartjs-2';
 
 // Register Chart.js components once
@@ -26,6 +28,7 @@ ChartJS.register(
   Tooltip,
   Legend,
   Filler,
+  zoomPlugin,
 );
 
 interface ChartDataset {
@@ -86,6 +89,13 @@ function deepMerge(target: any, source: any): any {
 }
 
 const FleetworxChart: React.FC<FleetworxChartProps> = memo(({ children }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chartRef = useRef<any>(null);
+  const [expanded, setExpanded] = useState(false);
+  const zoomIn = useCallback(() => chartRef.current?.zoom(1.15), []);
+  const zoomOut = useCallback(() => chartRef.current?.zoom(0.87), []);
+  const resetZoom = useCallback(() => chartRef.current?.resetZoom(), []);
+
   const spec = useMemo<ChartSpec | null>(() => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -211,6 +221,22 @@ const FleetworxChart: React.FC<FleetworxChartProps> = memo(({ children }) => {
     };
   }
 
+  // Interactive pan/zoom for cartesian charts (driven by the toolbar buttons,
+  // drag-to-pan, and pinch on touch). Wheel zoom is OFF so it never hijacks the
+  // page scroll while reading the chat.
+  const isCartesian = chartType !== 'pie' && chartType !== 'doughnut';
+  if (isCartesian) {
+    options.plugins.zoom = {
+      pan: { enabled: true, mode: 'xy' },
+      zoom: {
+        wheel: { enabled: false },
+        pinch: { enabled: true },
+        drag: { enabled: false },
+        mode: 'xy',
+      },
+    };
+  }
+
   // Honour cosmetic options supplied by the backend (e.g. axis min/max/step,
   // legend position), deep-merged over the defaults above. This is what makes
   // "set the y-axis to start at 300,000 with steps of 10,000" actually apply.
@@ -221,21 +247,77 @@ const FleetworxChart: React.FC<FleetworxChartProps> = memo(({ children }) => {
   const renderChart = () => {
     switch (chartType) {
       case 'pie':
-        return <Pie data={data} options={options} />;
+        return <Pie ref={chartRef} data={data} options={options} />;
       case 'doughnut':
-        return <Doughnut data={data} options={options} />;
+        return <Doughnut ref={chartRef} data={data} options={options} />;
       case 'line':
-        return <Line data={data} options={options} />;
+        return <Line ref={chartRef} data={data} options={options} />;
       case 'horizontalbar':
       case 'bar':
       default:
-        return <Bar data={data} options={options} />;
+        return <Bar ref={chartRef} data={data} options={options} />;
     }
   };
 
-  return (
-    <div className="my-3 w-full overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="relative" style={{ height: '400px', maxWidth: '100%' }}>
+  const btnCls =
+    'rounded-md bg-white/90 p-1.5 text-gray-600 shadow-sm ring-1 ring-gray-200 transition hover:bg-gray-100 hover:text-gray-900';
+
+  const toolbar = (
+    <div className="absolute right-1 top-1 z-10 flex gap-1">
+      {isCartesian && (
+        <>
+          <button
+            type="button"
+            onClick={zoomIn}
+            aria-label="Zoom in"
+            title="Zoom in"
+            className={btnCls}
+          >
+            <ZoomIn size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={zoomOut}
+            aria-label="Zoom out"
+            title="Zoom out"
+            className={btnCls}
+          >
+            <ZoomOut size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={resetZoom}
+            aria-label="Reset zoom"
+            title="Reset zoom"
+            className={btnCls}
+          >
+            <RotateCcw size={15} />
+          </button>
+        </>
+      )}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-label={expanded ? 'Exit fullscreen' : 'Enlarge chart'}
+        title={expanded ? 'Exit fullscreen' : 'Enlarge chart'}
+        className={btnCls}
+      >
+        {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+      </button>
+    </div>
+  );
+
+  const card = (
+    <div
+      className={`w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm ${
+        expanded ? 'flex h-full flex-col p-4' : 'my-3 p-5'
+      }`}
+    >
+      <div
+        className={`relative ${expanded ? 'min-h-0 flex-1' : ''}`}
+        style={{ height: expanded ? '100%' : '400px', maxWidth: '100%' }}
+      >
+        {toolbar}
         {renderChart()}
       </div>
       {spec.download_url && (
@@ -253,6 +335,21 @@ const FleetworxChart: React.FC<FleetworxChartProps> = memo(({ children }) => {
       )}
     </div>
   );
+
+  if (expanded) {
+    return (
+      <div
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+        onClick={() => setExpanded(false)}
+      >
+        <div className="h-[90vh] w-full max-w-6xl" onClick={(e) => e.stopPropagation()}>
+          {card}
+        </div>
+      </div>
+    );
+  }
+
+  return card;
 });
 
 FleetworxChart.displayName = 'FleetworxChart';
