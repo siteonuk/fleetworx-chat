@@ -42,16 +42,48 @@ interface ChartSpec {
   labels: string[];
   datasets: ChartDataset[];
   download_url?: string;
+  // Optional cosmetic Chart.js options from the backend (e.g. axis min/max/step).
+  // Deep-merged over the renderer defaults so requests like "y-axis start at
+  // 300,000 with steps of 10,000" are honoured.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  options?: Record<string, any>;
 }
 
 interface FleetworxChartProps {
   children: string;
 }
 
+// Fleetworx 2025 brand palette (fallback when the backend omits colours).
 const DEFAULT_COLOURS = [
-  '#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A',
-  '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52',
+  '#00798F',
+  '#F99D3E',
+  '#36BFBE',
+  '#2D2D2C',
+  '#FDCC99',
+  '#E3E9EC',
+  '#EBF6F5',
+  '#FFEDDB',
 ];
+
+/** Deep-merge `source` onto `target` (objects merged, other values overwrite). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function deepMerge(target: any, source: any): any {
+  if (!source || typeof source !== 'object') {
+    return target;
+  }
+  for (const key of Object.keys(source)) {
+    const sv = source[key];
+    if (sv && typeof sv === 'object' && !Array.isArray(sv)) {
+      target[key] = deepMerge(
+        target[key] && typeof target[key] === 'object' ? target[key] : {},
+        sv,
+      );
+    } else {
+      target[key] = sv;
+    }
+  }
+  return target;
+}
 
 const FleetworxChart: React.FC<FleetworxChartProps> = memo(({ children }) => {
   const spec = useMemo<ChartSpec | null>(() => {
@@ -84,6 +116,8 @@ const FleetworxChart: React.FC<FleetworxChartProps> = memo(({ children }) => {
         labels,
         datasets,
         download_url: raw.download_url,
+        // Carry cosmetic options through (nested Chart.js shape or flat).
+        options: raw.options ?? raw.data?.options,
       } as ChartSpec;
     } catch {
       return null;
@@ -177,18 +211,25 @@ const FleetworxChart: React.FC<FleetworxChartProps> = memo(({ children }) => {
     };
   }
 
+  // Honour cosmetic options supplied by the backend (e.g. axis min/max/step,
+  // legend position), deep-merged over the defaults above. This is what makes
+  // "set the y-axis to start at 300,000 with steps of 10,000" actually apply.
+  if (spec.options) {
+    deepMerge(options, spec.options);
+  }
+
   const renderChart = () => {
     switch (chartType) {
-    case 'pie':
-      return <Pie data={data} options={options} />;
-    case 'doughnut':
-      return <Doughnut data={data} options={options} />;
-    case 'line':
-      return <Line data={data} options={options} />;
-    case 'horizontalbar':
-    case 'bar':
-    default:
-      return <Bar data={data} options={options} />;
+      case 'pie':
+        return <Pie data={data} options={options} />;
+      case 'doughnut':
+        return <Doughnut data={data} options={options} />;
+      case 'line':
+        return <Line data={data} options={options} />;
+      case 'horizontalbar':
+      case 'bar':
+      default:
+        return <Bar data={data} options={options} />;
     }
   };
 
