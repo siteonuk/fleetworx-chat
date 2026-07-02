@@ -12,6 +12,7 @@ import {
   Legend,
   Filler,
 } from 'chart.js';
+import { createPortal } from 'react-dom';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
 import { Bar, Pie, Line, Doughnut } from 'react-chartjs-2';
@@ -337,15 +338,21 @@ const FleetworxChart: React.FC<FleetworxChartProps> = memo(({ children }) => {
   );
 
   if (expanded) {
-    return (
+    // Render the overlay via a portal on <body> so it escapes any ancestor with
+    // a transform/filter (message containers) — otherwise `fixed` anchors to
+    // that ancestor and the "fullscreen" chart only covers the message column.
+    return createPortal(
       <div
-        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
         onClick={() => setExpanded(false)}
+        role="dialog"
+        aria-modal="true"
       >
-        <div className="h-[90vh] w-full max-w-6xl" onClick={(e) => e.stopPropagation()}>
+        <div className="h-[90vh] w-[92vw] max-w-6xl" onClick={(e) => e.stopPropagation()}>
           {card}
         </div>
-      </div>
+      </div>,
+      document.body,
     );
   }
 

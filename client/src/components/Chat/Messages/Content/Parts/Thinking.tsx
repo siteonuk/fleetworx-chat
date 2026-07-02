@@ -18,7 +18,7 @@ export const ThinkingContent: FC<{
   const fontSize = useAtomValue(fontSizeAtom);
 
   return (
-    <div className="relative rounded-lg border border-border-light bg-surface-secondary p-3 pb-8 text-text-secondary">
+    <div className="relative rounded-lg border border-l-4 border-border-light border-l-[#36BFBE] bg-surface-secondary p-3 pb-8 text-text-secondary">
       <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{children}</p>
     </div>
   );
