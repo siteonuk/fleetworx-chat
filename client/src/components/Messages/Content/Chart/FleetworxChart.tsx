@@ -230,7 +230,11 @@ const FleetworxChart: React.FC<FleetworxChartProps> = memo(({ children }) => {
     options.plugins.zoom = {
       pan: { enabled: true, mode: 'xy' },
       zoom: {
-        wheel: { enabled: false },
+        // Trackpad pinch (and Ctrl + scroll) zooms; a plain scroll still scrolls
+        // the page — the ctrl modifier is what the browser sends for a trackpad
+        // pinch, so this covers laptop pinch-to-zoom without hijacking scroll.
+        wheel: { enabled: true, modifierKey: 'ctrl' },
+        // Touchscreen pinch.
         pinch: { enabled: true },
         drag: { enabled: false },
         mode: 'xy',
