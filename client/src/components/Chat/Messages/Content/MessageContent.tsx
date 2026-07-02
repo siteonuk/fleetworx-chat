@@ -18,7 +18,7 @@ const ERROR_CONNECTION_TEXT = 'Error connecting to server, try refreshing the pa
 const DELAYED_ERROR_TIMEOUT = 5500;
 const UNFINISHED_DELAY = 250;
 
-const parseThinkingContent = (text: string) => {
+export const parseThinkingContent = (text: string) => {
   // Closed block: ":::thinking … :::" → thinking + the answer after it.
   const closed = text.match(/:::thinking([\s\S]*?):::/);
   if (closed) {
