@@ -16,35 +16,21 @@ export interface ChangelogEntry {
     };
 }
 
-// The changelog now lives in the agent and is published to the shared /files
-// volume, so it updates without a frontend rebuild. Override with
-// VITE_CHANGELOG_URL if the agent is proxied at a different path. The bundled
-// /changelog.json is kept only as a last-resort fallback.
-const PRIMARY_CHANGELOG_URL = import.meta.env.VITE_CHANGELOG_URL || '/files/changelog.json';
-const FALLBACK_CHANGELOG_URL = '/changelog.json';
+// The changelog lives in the agent and is published to the shared /files volume,
+// so it updates without a frontend rebuild. Override with VITE_CHANGELOG_URL if
+// the agent is proxied at a different path.
+const CHANGELOG_URL = import.meta.env.VITE_CHANGELOG_URL || '/files/changelog.json';
 
 const fetcher = async (url: string) => {
-    try {
-        const res = await fetch(url, { cache: 'no-cache' });
-        if (!res.ok) {
-            throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
-        }
-        return (await res.json()) as ChangelogEntry[];
-    } catch (primaryError) {
-        // Fall back to the bundled copy so the modal never blank-screens if the
-        // agent-served file isn't reachable yet.
-        if (url !== FALLBACK_CHANGELOG_URL) {
-            const res = await fetch(FALLBACK_CHANGELOG_URL);
-            if (res.ok) {
-                return (await res.json()) as ChangelogEntry[];
-            }
-        }
-        throw primaryError;
+    const res = await fetch(url, { cache: 'no-cache' });
+    if (!res.ok) {
+        throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
     }
+    return (await res.json()) as ChangelogEntry[];
 };
 
 export default function useChangelog() {
-    const { data: changelog, error, isLoading } = useSWR<ChangelogEntry[]>(PRIMARY_CHANGELOG_URL, fetcher, {
+    const { data: changelog, error, isLoading } = useSWR<ChangelogEntry[]>(CHANGELOG_URL, fetcher, {
         revalidateOnFocus: false,
         revalidateOnReconnect: false,
         shouldRetryOnError: false,
