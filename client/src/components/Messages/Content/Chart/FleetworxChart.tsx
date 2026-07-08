@@ -247,6 +247,16 @@ const FleetworxChart: React.FC<FleetworxChartProps> = memo(({ children }) => {
   // "set the y-axis to start at 300,000 with steps of 10,000" actually apply.
   if (spec.options) {
     deepMerge(options, spec.options);
+
+    // When the backend pins an explicit y-axis min/max, drop our default
+    // `beginAtZero: true`. Otherwise Chart.js has both an explicit min (e.g.
+    // 300,000) AND beginAtZero on the same axis — an ambiguous combination
+    // that can pull the axis back down to 0 and make "start the y-axis at
+    // 300,000" look like it did nothing. The explicit bound must win.
+    const y = options.scales?.y;
+    if (y && (y.min != null || y.max != null)) {
+      delete y.beginAtZero;
+    }
   }
 
   const renderChart = () => {
