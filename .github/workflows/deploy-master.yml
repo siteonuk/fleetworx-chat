@@ -72,7 +72,13 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no root@78.129.143.28 \
             "cd $SERVER_PATH \
-            && docker compose pull \
+            && for i in 1 2 3 4 5; do \
+                 echo \"Pull attempt \$i...\"; \
+                 docker compose pull && break; \
+                 if [ \$i -eq 5 ]; then echo 'Pull failed after 5 attempts'; exit 1; fi; \
+                 echo 'Pull failed (likely transient registry TLS error), retrying in 15s...'; \
+                 sleep 15; \
+               done \
             && docker compose up -d"
 
       - name: 🔔 Slack — Container deployed
