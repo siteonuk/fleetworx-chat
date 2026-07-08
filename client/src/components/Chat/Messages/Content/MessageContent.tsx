@@ -18,12 +18,24 @@ const ERROR_CONNECTION_TEXT = 'Error connecting to server, try refreshing the pa
 const DELAYED_ERROR_TIMEOUT = 5500;
 const UNFINISHED_DELAY = 250;
 
-const parseThinkingContent = (text: string) => {
-  const thinkingMatch = text.match(/:::thinking([\s\S]*?):::/);
-  return {
-    thinkingContent: thinkingMatch ? thinkingMatch[1].trim() : '',
-    regularContent: thinkingMatch ? text.replace(/:::thinking[\s\S]*?:::/, '').trim() : text,
-  };
+export const parseThinkingContent = (text: string) => {
+  // Closed block: ":::thinking … :::" → thinking + the answer after it.
+  const closed = text.match(/:::thinking([\s\S]*?):::/);
+  if (closed) {
+    return {
+      thinkingContent: closed[1].trim(),
+      regularContent: text.replace(/:::thinking[\s\S]*?:::/, '').trim(),
+    };
+  }
+  // Open block (still streaming — closing "::: " not received yet): show
+  // everything after the opener live in the Thinking box, no answer yet. This
+  // lets step-by-step status ("Querying the database…") render as it arrives
+  // instead of leaking the raw ":::thinking" marker into the message.
+  const open = text.match(/:::thinking([\s\S]*)$/);
+  if (open) {
+    return { thinkingContent: open[1].trim(), regularContent: '' };
+  }
+  return { thinkingContent: '', regularContent: text };
 };
 
 const LoadingFallback = () => (

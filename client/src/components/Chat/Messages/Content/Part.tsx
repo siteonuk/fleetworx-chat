@@ -21,7 +21,8 @@ import {
   BashCall,
   SubagentCall,
 } from './Parts';
-import { ErrorMessage } from './MessageContent';
+import { ErrorMessage, parseThinkingContent } from './MessageContent';
+import Thinking from './Parts/Thinking';
 import RetrievalCall from './RetrievalCall';
 import { getCachedPreview } from '~/utils';
 import AgentHandoff from './AgentHandoff';
@@ -103,10 +104,19 @@ const Part = memo(function Part({
         return null;
       }
     }
+    // Extract a ":::thinking … :::" status block (live agent steps) so it
+    // renders in the collapsible Thinking card instead of as plain directive
+    // text. Non-thinking text is unaffected (thinkingContent stays empty).
+    const { thinkingContent, regularContent } = parseThinkingContent(text);
     return (
-      <Container>
-        <Text text={text} isCreatedByUser={isCreatedByUser} showCursor={showCursor} />
-      </Container>
+      <>
+        {thinkingContent.length > 0 && <Thinking>{thinkingContent}</Thinking>}
+        {(regularContent.length > 0 || (isLast && showCursor)) && (
+          <Container>
+            <Text text={regularContent} isCreatedByUser={isCreatedByUser} showCursor={showCursor} />
+          </Container>
+        )}
+      </>
     );
   } else if (part.type === ContentTypes.THINK) {
     const reasoning = typeof part.think === 'string' ? part.think : part.think?.value;
