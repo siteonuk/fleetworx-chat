@@ -28,7 +28,14 @@ const ssoController = async (req, res) => {
 
     let payload;
     try {
-      payload = jwt.verify(token, secret, { algorithms: ['HS256'], maxAge: '60s' });
+      payload = jwt.verify(token, secret, {
+        algorithms: ['HS256'],
+        maxAge: '60s',
+        // The issuing PHP server and this Node server aren't guaranteed to have
+        // synced clocks, so a strict maxAge check on `iat` intermittently
+        // rejected valid tokens. Allow some drift, configurable per-environment.
+        clockTolerance: Number(process.env.SSO_CLOCK_TOLERANCE) || 300,
+      });
     } catch (err) {
       logger.warn('[ssoController] Invalid or expired SSO token:', err.message);
       return res.status(401).json({ message: 'Invalid or expired SSO token' });
