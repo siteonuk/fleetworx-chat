@@ -9,12 +9,12 @@ env:
   SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
   ENVIRONMENT: Dev
   IMAGE_TAG: latest-dev
-  SERVER_PATH: /var/www/fleetworx_ai/chat-dev.fleetworx.net
+  SERVER_PATH: /opt/fleetworx/fleetworx-chat-dev
   HEALTH_PORT: 3091
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - name: Checkout repository
@@ -44,10 +44,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.ACCESS_TOKEN }}
 
-      - name: Build and push Docker image (AMD64 only)
+      - name: Build and push Docker image (ARM64)
         run: |
           docker build \
-            --platform linux/amd64 \
+            --platform linux/arm64 \
             -f Dockerfile.multi \
             --target api-build \
             -t ghcr.io/siteonuk/fleetworx-chat:$IMAGE_TAG \
@@ -70,7 +70,7 @@ jobs:
 
       - name: Deploy to server via SSH
         run: |
-          ssh -o StrictHostKeyChecking=no root@78.129.143.28 \
+          ssh -o StrictHostKeyChecking=no hardik@193.123.183.35 \
             "cd $SERVER_PATH \
             && for i in 1 2 3 4 5; do \
                  echo \"Pull attempt \$i...\"; \
@@ -94,7 +94,7 @@ jobs:
         run: |
           echo "Waiting for services to start..."
           sleep 30
-          ssh -o StrictHostKeyChecking=no root@78.129.143.28 \
+          ssh -o StrictHostKeyChecking=no hardik@193.123.183.35 \
             "cd $SERVER_PATH \
             && docker compose ps api \
             && curl -f --retry 3 --retry-delay 5 http://localhost:$HEALTH_PORT/health"
