@@ -5,11 +5,10 @@ import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provide
 import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
 import FleetworxChart from '~/components/Messages/Content/Chart';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
-import { handleDoubleClick, triggerDownload } from '~/utils';
+import { handleDoubleClick, triggerDownload, extractContent } from '~/utils';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
-import { handleDoubleClick, triggerDownload, extractContent } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
