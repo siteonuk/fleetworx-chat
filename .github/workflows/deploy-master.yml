@@ -1,9 +1,9 @@
-name: Deploy Fleetworx AI Chat (Master)
+name: Deploy Fleetworx AI Chat (Production)
 
 on:
   push:
     branches:
-      - master
+      - prod
 
 env:
   SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
