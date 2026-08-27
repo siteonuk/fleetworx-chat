@@ -5,6 +5,7 @@ import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provide
 import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
 import FleetworxChart from '~/components/Messages/Content/Chart';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import { handleDoubleClick, triggerDownload } from '~/utils';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
 import { useCodeBlockContext } from '~/Providers';
@@ -43,8 +44,12 @@ export const code: React.ElementType = memo(function MarkdownCode({
   const isChart = lang === 'chart';
   const isSingleLine = isSingleLineCode(children);
 
-  const { getNextIndex, resetCounter } = useCodeBlockContext();
+const { getNextIndex, getNextMermaidIndex, resetCounter } = useCodeBlockContext();
   const blockIndex = useRef(getNextIndex(isMath || isMermaid || isChart || isSingleLine)).current;
+  /* Mermaid fences do not consume a code-block index, so every one of them in a
+   * message would otherwise share `blockIndex` and collapse onto a single
+   * artifact id. They carry their own sequence instead. */
+  const mermaidIndex = useRef(isMermaid ? getNextMermaidIndex() : -1).current;
 
   useEffect(() => {
     resetCounter();
@@ -59,7 +64,7 @@ export const code: React.ElementType = memo(function MarkdownCode({
     const content = typeof children === 'string' ? children : extractContent(children);
     return (
       <MermaidErrorBoundary code={content}>
-        <Mermaid id={`mermaid-${blockIndex}`}>{content}</Mermaid>
+        <Mermaid id={`mermaid-${mermaidIndex}`}>{content}</Mermaid>
       </MermaidErrorBoundary>
     );
   } else if (isSingleLine) {
@@ -192,6 +197,19 @@ export const p: React.ElementType = memo(function MarkdownParagraph({ children }
   return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
 });
 p.displayName = 'MarkdownParagraph';
+
+type TTableProps = {
+  children: React.ReactNode;
+};
+
+export const table: React.ElementType = memo(function MarkdownTable({ children }: TTableProps) {
+  return (
+    <div className="markdown-table-wrapper w-full max-w-full">
+      <table>{children}</table>
+    </div>
+  );
+});
+table.displayName = 'MarkdownTable';
 
 type TImageProps = {
   src?: string;

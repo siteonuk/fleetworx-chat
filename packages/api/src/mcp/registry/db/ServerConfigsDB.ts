@@ -10,6 +10,7 @@ import type { AllMethods, MCPServerDocument } from '@librechat/data-schemas';
 
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
+import { MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
 import { AccessControlService } from '~/acl/accessControlService';
 
 /**
@@ -26,6 +27,10 @@ const DANGEROUS_CREDENTIAL_PATTERNS = [
   /\{\{LIBRECHAT_GRAPH_[^}]+\}\}/g,
   /\{\{LIBRECHAT_BODY_[^}]+\}\}/g,
 ];
+
+const BLOCKED_USER_OAUTH_ENDPOINT_PARAMS = ['audience', 'resource'] as const;
+
+type OAuthConfig = NonNullable<ParsedServerConfig['oauth']>;
 
 /**
  * Sanitizes headers by removing dangerous credential placeholders.
@@ -50,6 +55,150 @@ function sanitizeCredentialPlaceholders(
     sanitized[key] = sanitizedValue;
   }
   return sanitized;
+}
+
+function stripBlockedOAuthEndpointParams(url?: string): string | undefined {
+  if (!url) {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url);
+    BLOCKED_USER_OAUTH_ENDPOINT_PARAMS.forEach((param) => parsed.searchParams.delete(param));
+    return parsed.href;
+  } catch {
+    return url;
+  }
+}
+
+function sanitizeUserManagedOAuthConfig(config: ParsedServerConfig): ParsedServerConfig {
+  if (!config.oauth) {
+    return config;
+  }
+
+  const {
+    audience: _audience,
+    forward_audience_on_refresh: _forwardAudienceOnRefresh,
+    ...oauth
+  } = config.oauth;
+  return {
+    ...config,
+    oauth: {
+      ...oauth,
+      ...(config.oauth.authorization_url && {
+        authorization_url: stripBlockedOAuthEndpointParams(config.oauth.authorization_url),
+      }),
+      ...(config.oauth.token_url && {
+        token_url: stripBlockedOAuthEndpointParams(config.oauth.token_url),
+      }),
+    },
+  };
+}
+
+/** Normalizes legacy values that predate the current runtime config schemas. */
+function normalizePersistedConfig(config: ParsedServerConfig): ParsedServerConfig {
+  const persistedConfig = config as ParsedServerConfig & {
+    headers?: Record<string, string> | null;
+  };
+  if (persistedConfig.headers !== null) {
+    return config;
+  }
+
+  const { headers: _legacyNullHeaders, ...normalizedConfig } = persistedConfig;
+  return normalizedConfig as ParsedServerConfig;
+}
+
+function normalizeOAuthUrl(value?: string): string | undefined {
+  if (!value) {
+    return value;
+  }
+
+  try {
+    return new URL(value).href;
+  } catch {
+    return value;
+  }
+}
+
+function normalizeOAuthMethods(values?: readonly string[]): string | undefined {
+  if (!values?.length) {
+    return undefined;
+  }
+  return JSON.stringify([...new Set(values)].sort());
+}
+
+function preserveOmittedOAuthBindingFields(
+  existingOAuth: OAuthConfig,
+  updatedOAuth: OAuthConfig,
+): OAuthConfig {
+  return {
+    ...updatedOAuth,
+    ...(updatedOAuth.token_endpoint_auth_methods_supported === undefined &&
+      existingOAuth.token_endpoint_auth_methods_supported !== undefined && {
+        token_endpoint_auth_methods_supported: existingOAuth.token_endpoint_auth_methods_supported,
+      }),
+    ...(updatedOAuth.revocation_endpoint === undefined &&
+      existingOAuth.revocation_endpoint !== undefined && {
+        revocation_endpoint: existingOAuth.revocation_endpoint,
+      }),
+    ...(updatedOAuth.revocation_endpoint_auth_methods_supported === undefined &&
+      existingOAuth.revocation_endpoint_auth_methods_supported !== undefined && {
+        revocation_endpoint_auth_methods_supported:
+          existingOAuth.revocation_endpoint_auth_methods_supported,
+      }),
+  };
+}
+
+function getChangedOAuthSecretBindingFields(
+  existingConfig: MCPServerDocument['config'],
+  updatedConfig: ParsedServerConfig,
+): string[] {
+  const existingOAuth = existingConfig.oauth;
+  const updatedOAuth = updatedConfig.oauth;
+  if (!existingOAuth || !updatedOAuth) {
+    return [];
+  }
+
+  const fields = [
+    [
+      'url',
+      normalizeOAuthUrl('url' in existingConfig ? existingConfig.url : undefined),
+      normalizeOAuthUrl(updatedConfig.url),
+    ],
+    [
+      'oauth.authorization_url',
+      normalizeOAuthUrl(existingOAuth.authorization_url),
+      normalizeOAuthUrl(updatedOAuth.authorization_url),
+    ],
+    [
+      'oauth.token_url',
+      normalizeOAuthUrl(existingOAuth.token_url),
+      normalizeOAuthUrl(updatedOAuth.token_url),
+    ],
+    ['oauth.client_id', existingOAuth.client_id, updatedOAuth.client_id],
+    [
+      'oauth.token_exchange_method',
+      existingOAuth.token_exchange_method,
+      updatedOAuth.token_exchange_method,
+    ],
+    [
+      'oauth.token_endpoint_auth_methods_supported',
+      normalizeOAuthMethods(existingOAuth.token_endpoint_auth_methods_supported),
+      normalizeOAuthMethods(updatedOAuth.token_endpoint_auth_methods_supported),
+    ],
+    [
+      'oauth.revocation_endpoint',
+      normalizeOAuthUrl(existingOAuth.revocation_endpoint),
+      normalizeOAuthUrl(updatedOAuth.revocation_endpoint),
+    ],
+    [
+      'oauth.revocation_endpoint_auth_methods_supported',
+      normalizeOAuthMethods(existingOAuth.revocation_endpoint_auth_methods_supported),
+      normalizeOAuthMethods(updatedOAuth.revocation_endpoint_auth_methods_supported),
+    ],
+  ] as const;
+
+  return fields.filter(([, existing, updated]) => existing !== updated).map(([field]) => field);
 }
 
 /**
@@ -126,12 +275,12 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       );
     }
 
-    const sanitizedConfig = {
+    const sanitizedConfig = sanitizeUserManagedOAuthConfig({
       ...config,
       headers: sanitizeCredentialPlaceholders(
         (config as ParsedServerConfig & { headers?: Record<string, string> }).headers,
       ),
-    } as ParsedServerConfig;
+    } as ParsedServerConfig);
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     const transformedConfig = this.transformUserApiKeyConfig(sanitizedConfig);
@@ -175,25 +324,40 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
     const existingServer = await this._dbMethods.findMCPServerByServerName(serverName);
 
-    let configToSave: ParsedServerConfig = {
+    let configToSave: ParsedServerConfig = sanitizeUserManagedOAuthConfig({
       ...config,
       headers: sanitizeCredentialPlaceholders(
         (config as ParsedServerConfig & { headers?: Record<string, string> }).headers,
       ),
-    } as ParsedServerConfig;
+    } as ParsedServerConfig);
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     configToSave = this.transformUserApiKeyConfig(configToSave);
 
+    const existingOAuth = existingServer?.config?.oauth;
+    const existingOAuthSecret = existingOAuth?.client_secret;
+    const preservesOAuthSecret =
+      !config.oauth?.client_secret && !!existingOAuthSecret && !!configToSave.oauth;
+    if (preservesOAuthSecret && existingServer && existingOAuth && configToSave.oauth) {
+      configToSave = {
+        ...configToSave,
+        oauth: preserveOmittedOAuthBindingFields(existingOAuth, configToSave.oauth),
+      };
+      const changedFields = getChangedOAuthSecretBindingFields(existingServer.config, configToSave);
+      if (changedFields.length > 0) {
+        throw new MCPOAuthSecretReentryRequiredError(changedFields);
+      }
+    }
+
     /** Encrypted config before storing in database */
     configToSave = await this.encryptConfig(configToSave);
 
-    if (!config.oauth?.client_secret && existingServer?.config?.oauth?.client_secret) {
+    if (preservesOAuthSecret && existingOAuthSecret && configToSave.oauth) {
       configToSave = {
         ...configToSave,
         oauth: {
           ...configToSave.oauth,
-          client_secret: existingServer.config.oauth.client_secret,
+          client_secret: existingOAuthSecret,
         },
       };
     }
@@ -415,13 +579,20 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
   private async mapDBServerToParsedConfig(
     serverDBDoc: MCPServerDocument,
   ): Promise<ParsedServerConfig> {
+    const authorId =
+      serverDBDoc.author != null
+        ? (serverDBDoc.author as unknown as Types.ObjectId | string).toString()
+        : undefined;
     const config: ParsedServerConfig = {
       ...serverDBDoc.config,
       dbId: (serverDBDoc._id as Types.ObjectId).toString(),
       source: 'user',
       updatedAt: serverDBDoc.updatedAt?.getTime(),
+      ...(authorId ? { author: authorId } : {}),
     };
-    return await this.decryptConfig(config);
+    return sanitizeUserManagedOAuthConfig(
+      await this.decryptConfig(normalizePersistedConfig(config)),
+    );
   }
 
   /**

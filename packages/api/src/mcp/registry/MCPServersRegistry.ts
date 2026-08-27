@@ -1,6 +1,7 @@
 import { Keyv } from 'keyv';
 import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { isProcessMCPServerConfig } from 'librechat-data-provider';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
 import {
@@ -9,6 +10,7 @@ import {
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache/cacheConfig';
@@ -16,6 +18,104 @@ import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
+
+/**
+ * Provenance to persist for a config being stored in `tier`.
+ *
+ * SECURITY INVARIANT — an Agent Plugins server keeps its own `'plugin'` marker
+ * rather than taking the tier's tag. `processMCPEnv` reads that marker to decide
+ * whether a `${VAR}` the plugin authored stays literal, so retagging here would
+ * expand host secrets into a plugin-controlled header or URL at both inspection
+ * and connect time. Only operator-loaded tiers may carry the marker: a DB entry
+ * is user-authored and is always `'user'`, so user input can never claim plugin
+ * provenance and skip the sandboxed placeholder rules.
+ */
+function resolveServerSource(
+  config: t.ParsedServerConfig,
+  tier: t.MCPServerSource,
+): t.MCPServerSource {
+  if (tier === 'user') {
+    return 'user';
+  }
+  return isPluginSourced(config) ? MCP_PLUGIN_SOURCE : tier;
+}
+
+/**
+ * Source an overlaid config should carry when a Config-tier override shadows a
+ * same-name base entry. The base's source is normally inherited so downstream
+ * recovery routes to the base's storage tier.
+ *
+ * SECURITY INVARIANT — a remote `'plugin'` base is the exception: its no-resolve
+ * provenance must never transfer to an operator-authored override, or
+ * `processMCPEnv` would stop resolving the operator's own `${VAR}` placeholders.
+ * The override supersedes a remote plugin server, so it keeps its own trusted
+ * source instead. Process-backed base entries never reach this overlay path.
+ */
+function overlaySource(
+  base: t.ParsedServerConfig,
+  override: t.ParsedServerConfig,
+): t.MCPServerSource | undefined {
+  if (base.source === MCP_PLUGIN_SOURCE) {
+    return override.source ?? 'config';
+  }
+  return base.source;
+}
+
+/**
+ * Fields an admin override can legitimately set. Used to detect whether a
+ * resolved entry differs from its YAML base so unmodified YAML servers can
+ * skip lazy-init (avoids per-request inspect storms and prevents these
+ * servers from being cached in the config tier).
+ */
+const ADMIN_CONFIGURABLE_FIELDS = [
+  'type',
+  'command',
+  'args',
+  'env',
+  'stderr',
+  'url',
+  'headers',
+  'proxy',
+  'requiresOAuth',
+  'apiKey',
+  'oauth',
+  'oauth_headers',
+  'title',
+  'description',
+  'iconPath',
+  'startup',
+  'chatMenu',
+  'serverInstructions',
+  'customUserVars',
+  'timeout',
+  'sseReadTimeout',
+  'initTimeout',
+] as const;
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object') return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (Array.isArray(b)) return false;
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const aKeys = Object.keys(aObj);
+  const bKeys = Object.keys(bObj);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (!Object.prototype.hasOwnProperty.call(bObj, key)) return false;
+    if (!deepEqual(aObj[key], bObj[key])) return false;
+  }
+  return true;
+}
 
 const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
   const raw = process.env.MCP_INIT_TIMEOUT_MS;
@@ -25,6 +125,28 @@ const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
   const parsed = parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 30_000;
 })();
+
+/** Request context for resolving the effective MCP allowlists. */
+export interface MCPAllowlistContext {
+  userId?: string;
+  role?: string;
+}
+
+/**
+ * Resolves the effective `mcpSettings` allowlists for a request. Injected from the app
+ * layer (where the merged, tenant-scoped config lives) so the registry keeps no app-config
+ * dependency. Reads the ALS tenant context internally; pass the acting user to also pick up
+ * user/role-scoped overrides.
+ */
+export type MCPAllowlistResolver = (
+  ctx?: MCPAllowlistContext,
+) => Promise<{ allowedDomains?: string[] | null; allowedAddresses?: string[] | null }>;
+
+/** Effective allowlists resolved for a request. */
+interface ResolvedMCPAllowlists {
+  allowedDomains?: string[] | null;
+  allowedAddresses?: string[] | null;
+}
 
 /**
  * Central registry for managing MCP server configurations.
@@ -43,8 +165,11 @@ export class MCPServersRegistry {
   private readonly dbConfigsRepo: ServerConfigsDB;
   private readonly cacheConfigsRepo: IServerConfigsRepositoryInterface;
   private readonly configCacheRepo: IServerConfigsRepositoryInterface;
+  /** YAML-derived base allowlists; used at boot and as the fallback when no resolver is set. */
   private readonly allowedDomains?: string[] | null;
   private readonly allowedAddresses?: string[] | null;
+  /** Resolves the per-request (tenant-scoped) merged allowlists; falls back to the base above. */
+  private readonly allowlistResolver?: MCPAllowlistResolver;
   private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
   private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
   private readonly pendingGetAllPromises = new Map<
@@ -66,12 +191,14 @@ export class MCPServersRegistry {
     mongoose: typeof import('mongoose'),
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
+    allowlistResolver?: MCPAllowlistResolver,
   ) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
     this.configCacheRepo = ServerConfigsCacheFactory.create(CONFIG_CACHE_NAMESPACE, false);
     this.allowedDomains = allowedDomains;
     this.allowedAddresses = allowedAddresses;
+    this.allowlistResolver = allowlistResolver;
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
@@ -91,6 +218,7 @@ export class MCPServersRegistry {
     mongoose: typeof import('mongoose'),
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
+    allowlistResolver?: MCPAllowlistResolver,
   ): MCPServersRegistry {
     if (!mongoose) {
       throw new Error(
@@ -107,6 +235,7 @@ export class MCPServersRegistry {
       mongoose,
       allowedDomains,
       allowedAddresses,
+      allowlistResolver,
     );
     return MCPServersRegistry.instance;
   }
@@ -119,10 +248,12 @@ export class MCPServersRegistry {
     return MCPServersRegistry.instance;
   }
 
+  /** YAML base allowlist (boot/fallback). For request-time decisions use {@link resolveAllowlists}. */
   public getAllowedDomains(): string[] | null | undefined {
     return this.allowedDomains;
   }
 
+  /** YAML base allowlist (boot/fallback). For request-time decisions use {@link resolveAllowlists}. */
   public getAllowedAddresses(): string[] | null | undefined {
     return this.allowedAddresses;
   }
@@ -133,38 +264,108 @@ export class MCPServersRegistry {
   }
 
   /**
-   * Returns the config for a single server. When `configServers` is provided, config-source
-   * servers are resolved from it directly (no global state, no cross-tenant race).
+   * Resolves the effective domain/address allowlists for the current request.
+   *
+   * MCP allowlists live in `mcpSettings`, which is tenant/principal-scoped admin config, so
+   * they must be read per-request from the merged config — not from a process-global value
+   * that would leak across tenants. The injected resolver reads the ALS tenant context; pass
+   * the acting user so user/role-scoped overrides resolve too (config-source inspection has no
+   * user and resolves at tenant scope). Falls back to the YAML base allowlists when no resolver
+   * is injected or the resolver fails, so a transient lookup error fails to the operator's
+   * baseline rather than disabling the allowlist.
+   */
+  public async resolveAllowlists(ctx?: MCPAllowlistContext): Promise<{
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+    useSSRFProtection: boolean;
+  }> {
+    let allowedDomains = this.allowedDomains;
+    let allowedAddresses = this.allowedAddresses;
+    if (this.allowlistResolver) {
+      try {
+        const resolved = await this.allowlistResolver(ctx);
+        allowedDomains = resolved.allowedDomains;
+        allowedAddresses = resolved.allowedAddresses;
+      } catch {
+        logger.warn(
+          '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists',
+        );
+      }
+    }
+    return {
+      allowedDomains,
+      allowedAddresses,
+      useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+    };
+  }
+
+  /**
+   * Returns the config for a single server, mirroring the precedence used by
+   * getAllServerConfigs so list views and single-server lookups agree on
+   * the same name:
+   *   1. user-tier base entry wins absolutely over a config-tier candidate
+   *   2. process-backed base entries win absolutely over a config-tier candidate
+   *   3. healthy YAML/DB base wins over a failed (inspectionFailed) candidate
+   *   4. healthy candidate overlays its fields onto the base, preserving the
+   *      base entry's source tag so downstream recovery routes correctly
+   *   5. with no base, the candidate is returned as-is (config-only server)
+   *
+   * readThroughCache memoizes only the global YAML/DB lookup; the per-call
+   * configServers candidate is tenant-scoped and is never cached, so a
+   * failed stub from one tenant can never satisfy a no-userId lookup from
+   * another.
    */
   public async getServerConfig(
     serverName: string,
     userId?: string,
     configServers?: Record<string, t.ParsedServerConfig>,
   ): Promise<t.ParsedServerConfig | undefined> {
-    if (configServers?.[serverName]) {
-      return configServers[serverName];
-    }
+    const candidate = configServers?.[serverName];
 
     const cacheKey = this.getReadThroughCacheKey(serverName, userId);
-
+    let base: t.ParsedServerConfig | undefined;
     if (await this.readThroughCache.has(cacheKey)) {
-      return await this.readThroughCache.get(cacheKey);
+      base = await this.readThroughCache.get(cacheKey);
+    } else {
+      const configFromYaml = await this.cacheConfigsRepo.get(serverName);
+      if (configFromYaml) {
+        base = configFromYaml;
+      } else {
+        base = await this.dbConfigsRepo.get(serverName, userId);
+      }
+      await this.readThroughCache.set(cacheKey, base);
     }
 
-    const configFromYaml = await this.cacheConfigsRepo.get(serverName);
-    if (configFromYaml) {
-      await this.readThroughCache.set(cacheKey, configFromYaml);
-      return configFromYaml;
-    }
+    if (!candidate) return base;
+    if (base?.source === 'user') return base;
+    if (isProcessMCPServerConfig(base)) return base;
+    if (candidate.inspectionFailed) return base ?? candidate;
+    return base ? { ...candidate, source: overlaySource(base, candidate) } : candidate;
+  }
 
-    const configFromDB = await this.dbConfigsRepo.get(serverName, userId);
-    await this.readThroughCache.set(cacheKey, configFromDB);
-    return configFromDB;
+  /** Returns whether an effective config exactly matches the operator-owned base config. */
+  public async isAppServerConfig(
+    serverName: string,
+    effectiveConfig: t.ParsedServerConfig,
+  ): Promise<boolean> {
+    const baseConfig = await this.getServerConfig(serverName);
+    return baseConfig != null && deepEqual(baseConfig, effectiveConfig);
   }
 
   /**
-   * Returns all server configs visible to the given user.
-   * Operator-managed servers (YAML + Config) override User DB servers on name collisions.
+   * Returns the full server config map after merging YAML cache, Config-tier overrides,
+   * and User-DB entries.
+   *
+   * Precedence (lowest to highest): YAML cache > Config-tier overrides (success only) > User DB.
+   * Three guards keep the merge safe:
+   *   1. Config-tier entries carrying `inspectionFailed: true` never overlay an existing
+   *      base entry; the healthy base is preserved for the duration of the retry window.
+   *   2. User-DB entries (`source: 'user'`) are never replaced by Config-tier overlays.
+   *   3. Process-backed base entries are never replaced by Config-tier overlays.
+   * On a successful overlay the base entry's `source` field is preserved so downstream
+   * recovery logic routes to the correct storage location — except a `'plugin'` base,
+   * whose no-resolve provenance must not transfer to the operator override (see
+   * `overlaySource`).
    */
   public async getAllServerConfigs(
     userId?: string,
@@ -175,8 +376,23 @@ export class MCPServersRegistry {
       return this.getBaseServerConfigs(userId, role);
     }
     const base = await this.getBaseServerConfigs(userId, role);
-    this.warnOnOperatorManagedNameCollisions(configServers, base, 'Config');
-    return { ...base, ...configServers };
+    const result: Record<string, t.ParsedServerConfig> = { ...base };
+    for (const [name, override] of Object.entries(configServers)) {
+      if (result[name]?.source === 'user') {
+        logger.debug('[MCP][config] Admin override shadowed by user-tier entry');
+        continue;
+      }
+      if (isProcessMCPServerConfig(result[name])) {
+        logger.debug(`[MCP][config][${name}] Admin override shadowed by process-backed entry`);
+        continue;
+      }
+      if (override.inspectionFailed && result[name]) continue;
+      const baseEntry = result[name];
+      result[name] = baseEntry
+        ? { ...override, source: overlaySource(baseEntry, override) }
+        : override;
+    }
+    return result;
   }
 
   /**
@@ -239,7 +455,11 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true, source: 'yaml' };
+    const stubConfig: t.ParsedServerConfig = {
+      ...config,
+      inspectionFailed: true,
+      source: resolveServerSource(config, 'yaml'),
+    };
     const result = await configRepo.add(serverName, stubConfig, userId);
     await this.invalidateServerReadCaches(result.serverName, userId);
     this.resetYamlServerNamesMemo();
@@ -254,14 +474,17 @@ export class MCPServersRegistry {
     reservedServerNames?: Iterable<string>,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
+    const source = resolveServerSource(config, storageLocation === 'CACHE' ? 'yaml' : 'user');
+    const configForInspection = { ...config, source } as t.ParsedServerConfig;
+    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
     try {
       parsedConfig = await MCPServerInspector.inspect(
         serverName,
-        config,
+        configForInspection,
         undefined,
-        this.allowedDomains,
-        this.allowedAddresses,
+        allowedDomains,
+        allowedAddresses,
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -272,7 +495,7 @@ export class MCPServersRegistry {
     }
     const tagged = {
       ...parsedConfig,
-      source: (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource,
+      source,
     };
     const result =
       storageLocation === 'DB'
@@ -311,17 +534,18 @@ export class MCPServersRegistry {
     }
 
     const { inspectionFailed: _, ...configForInspection } = existing;
+    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
     try {
       parsedConfig = await MCPServerInspector.inspect(
         serverName,
         configForInspection,
         undefined,
-        this.allowedDomains,
-        this.allowedAddresses,
+        allowedDomains,
+        allowedAddresses,
       );
     } catch (error) {
-      logger.error(`[MCPServersRegistry] Reinspection failed for server "${serverName}":`, error);
+      logger.error('[MCPServersRegistry] Server reinspection failed');
       if (isMCPDomainNotAllowedError(error)) {
         throw error;
       }
@@ -334,13 +558,19 @@ export class MCPServersRegistry {
     return { serverName, config: updatedConfig };
   }
 
-  public async updateServer(
+  /**
+   * Inspects an update without mutating its backing repository. Callers that must
+   * coordinate an external fence with persistence can prepare first, fence, and
+   * then commit the returned config.
+   */
+  public async inspectServerUpdate(
     serverName: string,
     config: t.MCPOptions,
     storageLocation: 'CACHE' | 'DB',
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
+    const source = resolveServerSource(config, storageLocation === 'CACHE' ? 'yaml' : 'user');
 
     // Merge existing admin API key if not provided in update (needed for inspection)
     let configForInspection = { ...config };
@@ -357,14 +587,15 @@ export class MCPServersRegistry {
       }
     }
 
+    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
     try {
       parsedConfig = await MCPServerInspector.inspect(
         serverName,
-        configForInspection,
+        { ...configForInspection, source } as t.ParsedServerConfig,
         undefined,
-        this.allowedDomains,
-        this.allowedAddresses,
+        allowedDomains,
+        allowedAddresses,
       );
     } catch (error) {
       logger.error(`[MCPServersRegistry] Failed to inspect server "${serverName}":`, error);
@@ -373,9 +604,35 @@ export class MCPServersRegistry {
       }
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
+    return parsedConfig;
+  }
+
+  /** Persists a previously inspected update without opening a second MCP connection. */
+  public async commitServerUpdate(
+    serverName: string,
+    parsedConfig: t.ParsedServerConfig,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.ParsedServerConfig> {
+    const configRepo = this.getConfigRepository(storageLocation);
     await configRepo.update(serverName, parsedConfig, userId);
     await this.invalidateServerReadCaches(serverName, userId);
     return parsedConfig;
+  }
+
+  public async updateServer(
+    serverName: string,
+    config: t.MCPOptions,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.ParsedServerConfig> {
+    const parsedConfig = await this.inspectServerUpdate(
+      serverName,
+      config,
+      storageLocation,
+      userId,
+    );
+    return await this.commitServerUpdate(serverName, parsedConfig, storageLocation, userId);
   }
 
   /**
@@ -393,20 +650,23 @@ export class MCPServersRegistry {
       return {};
     }
 
-    const yamlNames = await this.getYamlServerNames();
-    const configServerEntries = Object.entries(resolvedMcpConfig).filter(
-      ([name]) => !yamlNames.has(name),
-    );
-
-    if (configServerEntries.length === 0) {
-      return {};
-    }
-
     const result: Record<string, t.ParsedServerConfig> = {};
 
+    // Config-source servers are admin-defined with no acting user; resolve the effective
+    // allowlists once at tenant scope and fold them into each config-cache key so a tenant
+    // whose allowlist rejects a URL cannot poison the shared key for a tenant that allows it.
+    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists();
+    const allowlists: ResolvedMCPAllowlists = { allowedDomains, allowedAddresses };
+
+    /** Single snapshot of the YAML cache for the whole pass: in the Redis aggregate-key backend, every per-name get() reads and deserializes the full map, so N concurrent per-server lookups would issue N full-map reads. The snapshot also keeps the unchanged-YAML comparison consistent against one view of YAML across all entries. */
+    const yamlSnapshot = await this.cacheConfigsRepo.getAll();
+
     const settled = await Promise.allSettled(
-      configServerEntries.map(async ([serverName, rawConfig]) => {
-        const parsed = await this.ensureSingleConfigServer(serverName, rawConfig);
+      Object.entries(resolvedMcpConfig).map(async ([serverName, rawConfig]) => {
+        if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
+          return;
+        }
+        const parsed = await this.ensureSingleConfigServer(serverName, rawConfig, allowlists);
         if (parsed) {
           result[serverName] = parsed;
         }
@@ -414,11 +674,36 @@ export class MCPServersRegistry {
     );
     for (const outcome of settled) {
       if (outcome.status === 'rejected') {
-        logger.error('[MCPServersRegistry][ensureConfigServers] Unexpected error:', outcome.reason);
+        logger.error('[MCPServersRegistry][ensureConfigServers] Unexpected initialization error');
       }
     }
 
     return result;
+  }
+
+  /**
+   * Returns true when `rawConfig` matches the YAML cache entry for this server
+   * on every admin-configurable field, so an unmodified YAML-defined server
+   * can skip lazy-init and avoid being re-inspected or shadowed in the
+   * config tier.
+   */
+  private isUnmodifiedYamlServer(
+    yamlSnapshot: Record<string, t.ParsedServerConfig>,
+    serverName: string,
+    rawConfig: t.MCPOptions,
+  ): boolean {
+    const yamlEntry = yamlSnapshot[serverName];
+    if (!yamlEntry || yamlEntry.source !== 'yaml') {
+      return false;
+    }
+    const yamlRecord = yamlEntry as unknown as Record<string, unknown>;
+    const rawRecord = rawConfig as unknown as Record<string, unknown>;
+    /** rawConfig is the pre-inspection MCPOptions; absent fields mean the admin didn't override and shouldn't count as a diff against inspector-derived values on the cached YAML entry. */
+    return ADMIN_CONFIGURABLE_FIELDS.every((field) => {
+      const rawVal = rawRecord[field];
+      if (rawVal === undefined) return true;
+      return deepEqual(yamlRecord[field], rawVal);
+    });
   }
 
   /**
@@ -430,8 +715,9 @@ export class MCPServersRegistry {
   private async ensureSingleConfigServer(
     serverName: string,
     rawConfig: t.MCPOptions,
+    allowlists: ResolvedMCPAllowlists,
   ): Promise<t.ParsedServerConfig | undefined> {
-    const cacheKey = this.configCacheKey(serverName, rawConfig);
+    const cacheKey = this.configCacheKey(serverName, rawConfig, allowlists);
 
     const cached = await this.configCacheRepo.get(cacheKey);
     if (cached) {
@@ -440,7 +726,7 @@ export class MCPServersRegistry {
       if (!isStaleStub) {
         return cached;
       }
-      logger.info(`[MCP][config][${serverName}] Retrying stale failure stub`);
+      logger.info('[MCP][config] Retrying stale failure stub');
     }
 
     const pending = this.pendingConfigInits.get(cacheKey);
@@ -448,7 +734,7 @@ export class MCPServersRegistry {
       return pending;
     }
 
-    const initPromise = this.lazyInitConfigServer(cacheKey, serverName, rawConfig);
+    const initPromise = this.lazyInitConfigServer(cacheKey, serverName, rawConfig, allowlists);
     this.pendingConfigInits.set(cacheKey, initPromise);
 
     try {
@@ -466,48 +752,50 @@ export class MCPServersRegistry {
     cacheKey: string,
     serverName: string,
     rawConfig: t.MCPOptions,
+    allowlists: ResolvedMCPAllowlists,
   ): Promise<t.ParsedServerConfig | undefined> {
-    const prefix = `[MCP][config][${serverName}]`;
+    const prefix = '[MCP][config]';
     logger.info(`${prefix} Lazy-initializing config-source server`);
 
+    const source = resolveServerSource(rawConfig, 'config');
+
     try {
+      const configForInspection = { ...rawConfig, source } as t.ParsedServerConfig;
+      const { allowedDomains, allowedAddresses } = allowlists;
       const inspected = await withTimeout(
         MCPServerInspector.inspect(
           serverName,
-          rawConfig,
+          configForInspection,
           undefined,
-          this.allowedDomains,
-          this.allowedAddresses,
+          allowedDomains,
+          allowedAddresses,
         ),
         CONFIG_SERVER_INIT_TIMEOUT_MS,
         `${prefix} Server initialization timed out`,
       );
 
-      const parsedConfig: t.ParsedServerConfig = { ...inspected, source: 'config' };
+      const parsedConfig: t.ParsedServerConfig = { ...inspected, source };
       await this.upsertConfigCache(cacheKey, parsedConfig);
 
       logger.info(
-        `${prefix} Initialized: tools=${parsedConfig.tools ?? 'N/A'}, ` +
+        `${prefix} Initialized: toolCount=${parsedConfig.toolFunctions ? Object.keys(parsedConfig.toolFunctions).length : 0}, ` +
           `duration=${parsedConfig.initDuration ?? 'N/A'}ms`,
       );
       return parsedConfig;
-    } catch (error) {
-      logger.error(`${prefix} Failed to initialize:`, error);
+    } catch {
+      logger.error(`${prefix} Failed to initialize`);
 
       const stubConfig: t.ParsedServerConfig = {
         ...rawConfig,
         inspectionFailed: true,
-        source: 'config',
+        source,
         updatedAt: Date.now(),
       };
       try {
         await this.upsertConfigCache(cacheKey, stubConfig);
         logger.info(`${prefix} Stored stub config for recovery`);
-      } catch (cacheError) {
-        logger.error(
-          `${prefix} Failed to store stub config (will retry on next request):`,
-          cacheError,
-        );
+      } catch {
+        logger.error(`${prefix} Failed to store stub config; will retry on next request`);
       }
       return stubConfig;
     }
@@ -636,8 +924,7 @@ export class MCPServersRegistry {
     }
 
     logger.warn(
-      `[MCPServersRegistry] ${operatorSource} MCP server(s) shadow DB-backed server(s) with colliding name(s): ` +
-        `${shadowedNames.join(', ')}. DB records remain stored but are hidden while operator-managed servers use these names.`,
+      `[MCPServersRegistry] ${operatorSource} MCP server(s) shadow DB-backed servers with ${shadowedNames.length} colliding name(s); DB records remain stored but hidden`,
     );
   }
 
@@ -673,12 +960,24 @@ export class MCPServersRegistry {
   }
 
   /**
-   * Produces a config-cache key scoped by server name AND a hash of the raw config.
-   * Prevents cross-tenant cache poisoning when two tenants define the same server name
-   * with different configurations.
+   * Produces a config-cache key scoped by server name AND a hash of the raw config plus the
+   * effective allowlists. Hashing the raw config prevents cross-tenant poisoning when two
+   * tenants define the same server name with different configurations; hashing the allowlists
+   * prevents poisoning when the same config resolves differently because tenants have different
+   * `mcpSettings.allowedDomains` / `allowedAddresses` (so one tenant's inspection result — e.g.
+   * an `inspectionFailed` stub from a rejected domain — never satisfies another tenant's lookup).
    */
-  private configCacheKey(serverName: string, rawConfig: t.MCPOptions): string {
-    const sorted = JSON.stringify(rawConfig, (_key, value: unknown) => {
+  private configCacheKey(
+    serverName: string,
+    rawConfig: t.MCPOptions,
+    allowlists?: ResolvedMCPAllowlists,
+  ): string {
+    const payload = {
+      rawConfig,
+      allowedDomains: allowlists?.allowedDomains ?? null,
+      allowedAddresses: allowlists?.allowedAddresses ?? null,
+    };
+    const sorted = JSON.stringify(payload, (_key, value: unknown) => {
       if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
         return Object.fromEntries(
           Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)),

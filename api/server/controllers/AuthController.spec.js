@@ -22,6 +22,8 @@ jest.mock('~/models', () => ({
   findUser: jest.fn(),
 }));
 jest.mock('@librechat/api', () => ({
+  OPENID_EXPIRY_BUFFER_SECONDS: 30,
+  math: jest.fn((value, fallback) => fallback),
   isEnabled: jest.fn(),
   findOpenIDUser: jest.fn(),
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),

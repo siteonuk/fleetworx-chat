@@ -1,8 +1,8 @@
-# v0.8.6-rc1
+# v0.8.8-rc1
 # syntax=docker/dockerfile:1.4   ← enables BuildKit cache mounts
 
 # Base node image
-FROM node:20-alpine AS node
+FROM node:24.16.0-alpine AS node
 
 RUN apk upgrade --no-cache
 RUN apk add --no-cache jemalloc
@@ -36,7 +36,8 @@ COPY --chown=node:node packages/api/package.json ./packages/api/package.json
 # ── Install deps – cache persists on the local machine between builds ──
 RUN --mount=type=cache,id=librechat-npm,target=/root/.npm,uid=1000,gid=1000 \
     touch .env ; \
-    mkdir -p /app/client/public/images /app/logs /app/uploads ; \
+mkdir -p /app/client/public/images /app/logs /app/uploads /app/skill /app/data ; \
+    chmod 1777 /app/data ; \
     npm config set fetch-retry-maxtimeout 600000 ; \
     npm config set fetch-retries 5 ; \
     npm config set fetch-retry-mintimeout 15000 ; \
@@ -60,6 +61,18 @@ RUN --mount=type=cache,id=librechat-vite,target=/app/node_modules/.vite,uid=1000
     NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run frontend && \
     npm prune --production && \
     npm cache clean --force
+
+# Optional build metadata surfaced in Settings -> About for support triage.
+# Declared here (after the heavy install/build steps) so that commit/date
+# changing on every CI run does not bust the cache for dependency install
+# and frontend build layers. When unset, the backend falls back to local
+# git resolution (if .git is present), and finally to empty values.
+ARG BUILD_COMMIT=
+ARG BUILD_BRANCH=
+ARG BUILD_DATE=
+ENV BUILD_COMMIT=${BUILD_COMMIT}
+ENV BUILD_BRANCH=${BUILD_BRANCH}
+ENV BUILD_DATE=${BUILD_DATE}
 
 # Node API setup
 EXPOSE 3080
