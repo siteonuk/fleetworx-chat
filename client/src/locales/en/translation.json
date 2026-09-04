@@ -1103,6 +1103,8 @@
   "com_ui_create_project": "Create project",
   "com_ui_create_prompt": "Create Prompt",
   "com_ui_create_prompt_page": "New Prompt Configuration Page",
+  "com_ui_save_prompt": "Save as prompt",
+  "com_ui_prompt_saved": "Prompt saved",
   "com_ui_create_skill": "Create Skill",
   "com_ui_create_skill_upload": "Upload SKILL.md",
   "com_ui_create_skill_upload_error": "Failed to read the uploaded file",

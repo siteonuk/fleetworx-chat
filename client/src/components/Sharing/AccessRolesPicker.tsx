@@ -79,6 +79,8 @@ export default function AccessRolesPicker({
         menuId={`access-roles-menu-${menuId}`}
         isOpen={isOpen}
         setIsOpen={setIsOpen}
+        portal={true}
+        unmountOnHide={true}
         trigger={
           <Ariakit.MenuButton
             id={id}

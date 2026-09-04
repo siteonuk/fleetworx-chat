@@ -1,5 +1,6 @@
 import React, { useState, useMemo, memo } from 'react';
 import { useRecoilState } from 'recoil';
+import { BookmarkPlus } from 'lucide-react';
 import {
   Button,
   EditIcon,
@@ -9,12 +10,14 @@ import {
   TooltipAnchor,
   RegenerateIcon,
 } from '@librechat/client';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
-import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { useGenerationsByLatest, useHasAccess, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
+import SavePromptDialog from '~/components/Prompts/dialogs/SavePromptDialog';
 import { cn } from '~/utils';
 import store from '~/store';
 
@@ -135,6 +138,11 @@ const HoverButtons = ({
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
+  const [savePromptOpen, setSavePromptOpen] = useState(false);
+  const hasSavePromptAccess = useHasAccess({
+    permissionType: PermissionTypes.PROMPTS,
+    permission: Permissions.CREATE,
+  });
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -186,6 +194,7 @@ const HoverButtons = ({
   const handleCopy = () => copyToClipboard(setIsCopied);
 
   return (
+    <>
     <div className="group visible flex justify-center gap-0.5 self-end focus-within:outline-none lg:justify-start">
       {/* Text to Speech */}
       {TextToSpeech && !error && !isActiveStreamingMessage && (
@@ -224,6 +233,17 @@ const HoverButtons = ({
               : '',
           )}
           dataTestId={!isCreatedByUser ? 'copy-response-button' : undefined}
+        />
+      )}
+
+      {/* Save as Prompt Button */}
+      {isCreatedByUser && !isActiveStreamingMessage && !error && hasSavePromptAccess && (
+        <HoverButton
+          onClick={() => setSavePromptOpen(true)}
+          title={localize('com_ui_save_prompt')}
+          icon={<BookmarkPlus className="h-[18px] w-[18px]" />}
+          isLast={isLast}
+          dataTestId="save-as-prompt-button"
         />
       )}
 
@@ -280,6 +300,13 @@ const HoverButtons = ({
         />
       )}
     </div>
+
+    <SavePromptDialog
+      open={savePromptOpen}
+      onOpenChange={setSavePromptOpen}
+      messageText={extractMessageContent(message)}
+    />
+    </>
   );
 };
 

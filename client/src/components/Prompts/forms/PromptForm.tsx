@@ -21,7 +21,6 @@ import {
 } from '~/data-provider';
 import { useResourcePermissions, useHasAccess, useLocalize, useFocusTrap } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
-import CategorySelector from '../fields/CategorySelector';
 import PromptVariables from '../display/PromptVariables';
 import PromptVersions from '../display/PromptVersions';
 import { usePromptGroupsContext } from '~/Providers';
@@ -138,31 +137,24 @@ const VersionsPanel = React.memo(
 VersionsPanel.displayName = 'VersionsPanel';
 
 interface HeaderActionsProps {
-  group: TPromptGroup;
+  group: TPromptGroup | null;
   canEdit: boolean;
   canDelete: boolean;
-  selectedPromptId?: string;
-  onCategoryChange?: (value: string) => void;
+  selectedPromptId: string;
 }
 
 const HeaderActions = React.memo(
-  ({ group, canEdit, canDelete, selectedPromptId, onCategoryChange }: HeaderActionsProps) => {
+  ({ group, canEdit, canDelete, selectedPromptId }: HeaderActionsProps) => {
     const hasShareAccess = useHasAccess({
       permissionType: PermissionTypes.PROMPTS,
       permission: Permissions.SHARE,
     });
 
     const groupId = group?._id || '';
-    const groupCategory = group?.category || '';
     const isLoadingGroup = !group;
 
     return (
       <div className="flex items-center gap-2">
-        <CategorySelector
-          className="h-10"
-          currentCategory={groupCategory}
-          onValueChange={canEdit ? onCategoryChange : undefined}
-        />
         {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
         {canDelete && (
           <DeletePrompt
@@ -414,19 +406,6 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
     [group, updateGroupMutation.mutate, debouncedUpdateCommand],
   );
 
-  const handleCategoryChange = useCallback(
-    (value: string) => {
-      if (!group?._id) {
-        return;
-      }
-      updateGroupMutation.mutate({
-        id: group._id,
-        payload: { name: group.name, category: value },
-      });
-    },
-    [group?._id, group?.name, updateGroupMutation],
-  );
-
   if (initialLoad) {
     return <SkeletonForm />;
   }
@@ -481,7 +460,6 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
                       canEdit={canEdit}
                       canDelete={canDelete}
                       selectedPromptId={selectedPromptId}
-                      onCategoryChange={handleCategoryChange}
                     />
                   </div>
                 )}
@@ -528,7 +506,6 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
                             canEdit={canEdit}
                             canDelete={canDelete}
                             selectedPromptId={selectedPromptId}
-                            onCategoryChange={handleCategoryChange}
                           />
                         </div>
                       )}

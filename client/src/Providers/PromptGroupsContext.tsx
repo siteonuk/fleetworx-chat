@@ -4,7 +4,6 @@ import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
 import { usePromptGroupsNav, useHasAccess, useCatalogReady } from '~/hooks';
 import { useGetAllPromptGroups } from '~/data-provider';
-import { CategoryIcon } from '~/components/Prompts';
 import { mapPromptGroups } from '~/utils';
 
 type AllPromptGroupsData =
@@ -51,7 +50,6 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
             ? group.oneliner
             : (group.productionPrompt?.prompt ?? '')
         }`,
-        icon: <CategoryIcon category={group.category ?? ''} className="h-5 w-5" />,
       }));
 
       const promptsMap = mapPromptGroups(data);

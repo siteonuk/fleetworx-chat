@@ -18,7 +18,6 @@ import { useLocalize, useAuthContext, useSubmitMessage, useResourcePermissions }
 import { useRecordPromptUsage, useDeletePromptGroup } from '~/data-provider';
 import VariableDialog from '../dialogs/VariableDialog';
 import PreviewPrompt from '../dialogs/PreviewPrompt';
-import CategoryIcon from '../utils/CategoryIcon';
 import { useLiveAnnouncer } from '~/Providers';
 import { detectVariables, cn } from '~/utils';
 
@@ -150,11 +149,6 @@ function ChatGroupItem({
           aria-label={ariaLabel}
         />
         <div className="flex items-start gap-2.5 px-3 py-2.5">
-          <CategoryIcon
-            category={group.category ?? ''}
-            className="mt-0.5 size-4 shrink-0"
-            aria-hidden="true"
-          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <TooltipAnchor
