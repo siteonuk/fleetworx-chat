@@ -1728,6 +1728,10 @@ export const interfaceSchema = z
     bookmarks: z.boolean().optional(),
     memories: z.boolean().optional(),
     presets: z.boolean().optional(),
+    /** Show/hide pinned chats (Pin menu item + Pinned section). Absent = shown. */
+    pinnedChats: z.boolean().optional(),
+    /** Show/hide chat projects (Change/Remove project menu items). Absent = shown. */
+    projects: z.boolean().optional(),
     prompts: z
       .union([
         z.boolean(),
