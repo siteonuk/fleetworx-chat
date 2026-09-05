@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useCallback } from 'react';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import supersub from 'remark-supersub';
@@ -142,9 +142,34 @@ export default function VariableForm({
     onClose();
   };
 
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLFormElement>) => {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        handleSubmit(onSubmit)();
+      }
+    },
+    [handleSubmit, onSubmit],
+  );
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        const active = document.activeElement;
+        const inDialog = document.querySelector('[role="dialog"]')?.contains(active);
+        if (inDialog) {
+          event.preventDefault();
+          handleSubmit(onSubmit)();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleSubmit, onSubmit]);
+
   return (
     <div className="mx-auto p-1 md:container">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" onKeyDown={onKeyDown}>
         <div className="mb-6 max-h-screen max-w-[80vw] overflow-auto rounded-md bg-surface-tertiary p-4 text-text-secondary sm:max-w-full md:max-h-96">
           <ReactMarkdown
             /** @ts-ignore */

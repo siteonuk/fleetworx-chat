@@ -83,6 +83,11 @@ function ConvoOptions({
     permission: Permissions.CREATE,
   });
 
+  /** Mapped from interface.pinnedChats (absent = shown). Toggle via librechat.yaml. */
+  const pinnedChatsEnabled = startupConfig?.interface?.pinnedChats !== false;
+  /** Mapped from interface.projects (absent = shown). Toggle via librechat.yaml. */
+  const projectsEnabled = startupConfig?.interface?.projects !== false;
+
   const archiveConvoMutation = useArchiveConvoMutation();
   const assignConversationToProject = useAssignConversationToProjectMutation();
   const pinConvoMutation = usePinConversationMutation();
@@ -281,6 +286,7 @@ function ConvoOptions({
         label: localize(isPinned ? 'com_ui_unpin' : 'com_ui_pin'),
         onClick: handlePinClick,
         hideOnClick: false,
+        show: pinnedChatsEnabled,
         icon: isPinLoading ? (
           <Spinner className="size-4" />
         ) : (
@@ -309,13 +315,14 @@ function ConvoOptions({
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'project-conversation-dialog',
         hideOnClick: false,
+        show: projectsEnabled,
         ref: projectButtonRef,
         render: (props) => <button {...props} />,
       },
       {
         label: localize('com_ui_remove_from_project'),
         onClick: removeProjectHandler,
-        show: Boolean(chatProjectId),
+        show: projectsEnabled && Boolean(chatProjectId),
         hideOnClick: false,
         icon: assignConversationToProject.isLoading ? (
           <Spinner className="size-4" />
@@ -363,6 +370,8 @@ function ConvoOptions({
       removeProjectHandler,
       chatProjectId,
       assignConversationToProject.isLoading,
+      pinnedChatsEnabled,
+      projectsEnabled,
     ],
   );
 

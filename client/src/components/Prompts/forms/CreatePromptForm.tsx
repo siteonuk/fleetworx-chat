@@ -2,11 +2,10 @@ import { useEffect } from 'react';
 import { FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, Controller, FormProvider } from 'react-hook-form';
-import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { Button, Spinner, TextareaAutosize, Input, useMediaQuery } from '@librechat/client';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import VariablesDropdown from '../editor/VariablesDropdown';
-import CategorySelector from '../fields/CategorySelector';
 import PromptVariables from '../display/PromptVariables';
 import { usePromptGroupsContext } from '~/Providers';
 import { useLocalize, useHasAccess } from '~/hooks';
@@ -19,7 +18,6 @@ type CreateFormValues = {
   name: string;
   prompt: string;
   type: 'text' | 'chat';
-  category: string;
   oneliner?: string;
   command?: string;
 };
@@ -28,7 +26,6 @@ const defaultPrompt: CreateFormValues = {
   name: '',
   prompt: '',
   type: 'text',
-  category: '',
   oneliner: undefined,
   command: undefined,
 };
@@ -37,11 +34,14 @@ const CreatePromptForm = ({
   defaultValues = defaultPrompt,
   onSuccess,
   isDialog = false,
+  prefillAsDirty = false,
 }: {
   defaultValues?: CreateFormValues;
   onSuccess?: (groupId: string) => void;
   /** Drops the page-level chrome (sidebar toggle, page padding) when hosted in a dialog */
   isDialog?: boolean;
+  /** Allow immediate submit when defaultValues are prefilled (e.g. save-from-chat) */
+  prefillAsDirty?: boolean;
 }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -68,7 +68,6 @@ const CreatePromptForm = ({
   const methods = useForm({
     defaultValues: {
       ...defaultValues,
-      category: localStorage.getItem(LocalStorageKeys.LAST_PROMPT_CATEGORY) ?? '',
     },
   });
 
@@ -92,16 +91,14 @@ const CreatePromptForm = ({
 
   const promptText = watch('prompt');
   const isCreating = createPromptMutation.isLoading;
-  const isBlocked = !isDirty || isSubmitting || !isValid || isCreating;
+  const isBlocked =
+    (prefillAsDirty ? false : !isDirty) || isSubmitting || !isValid || isCreating;
   /** Floating labels notch out the surface behind them: the dialog sits on `surface-primary`, the page on `presentation` */
   const labelBgClassName = isDialog ? 'bg-surface-primary' : 'bg-presentation';
 
   const onSubmit = (data: CreateFormValues) => {
-    const { name, category, oneliner, command, ...rest } = data;
-    const groupData = { name, category } as Pick<
-      CreateFormValues,
-      'name' | 'category' | 'oneliner' | 'command'
-    >;
+    const { name, oneliner, command, ...rest } = data;
+    const groupData = { name } as Pick<CreateFormValues, 'name' | 'oneliner' | 'command'>;
     if ((oneliner?.length ?? 0) > 0) {
       groupData.oneliner = oneliner;
     }
@@ -125,7 +122,6 @@ const CreatePromptForm = ({
         {isSmallScreen ? (
           <div className="mb-2 flex items-center justify-between gap-2">
             {!isDialog && <OpenSidebar />}
-            <CategorySelector portal={!isDialog} />
           </div>
         ) : null}
         <div className="mb-1 flex flex-col items-center justify-between font-bold sm:text-xl md:mb-0 md:text-2xl">
@@ -166,11 +162,6 @@ const CreatePromptForm = ({
                 </div>
               )}
             />
-            {!isSmallScreen && (
-              <div>
-                <CategorySelector portal={!isDialog} />
-              </div>
-            )}
           </div>
         </div>
         <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">

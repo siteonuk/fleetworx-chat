@@ -8,6 +8,7 @@ import type { List } from 'react-virtualized';
 import {
   useConversationsInfiniteQuery,
   usePinnedConversationsQuery,
+  useGetStartupConfig,
   useTitleGeneration,
 } from '~/data-provider';
 import {
@@ -17,7 +18,6 @@ import {
   useLocalStorage,
   useNavScrolling,
 } from '~/hooks';
-import ProjectsSection from '~/components/Conversations/ProjectsSection';
 import PinnedSection from '~/components/Conversations/PinnedSection';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
@@ -82,12 +82,16 @@ const ConversationsSection = memo(() => {
     return data ? data.pages.flatMap((page) => page.conversations) : [];
   }, [data]);
 
+  /** Feature flag from librechat.yaml interface: pinned chats section (absent = shown) */
+  const { data: startupConfig } = useGetStartupConfig();
+  const pinnedChatsEnabled = startupConfig?.interface?.pinnedChats !== false;
+
   /** Pins are fetched on their own so one older than the first page of the chats list
    * still shows on first paint, instead of appearing only once that list scrolls to it.
    * The bookmark filter still applies, matching the chats list beside it. */
   const { data: pinnedData } = usePinnedConversationsQuery(
     { tags: tags.length === 0 ? undefined : tags },
-    { enabled: isAuthenticated },
+    { enabled: pinnedChatsEnabled && isAuthenticated },
   );
 
   /* `groupConversationsByDate` strips pins from the chats groups. A failed
@@ -162,8 +166,9 @@ const ConversationsSection = memo(() => {
           <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
         </div>
       )}
-      {!search.query && <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />}
-      {!search.query && <PinnedSection conversations={pinnedConversations} toggleNav={toggleNav} />}
+      {!search.query && pinnedChatsEnabled && (
+        <PinnedSection conversations={pinnedConversations} toggleNav={toggleNav} />
+      )}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
         <Conversations
           conversations={conversations}

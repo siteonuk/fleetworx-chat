@@ -41,6 +41,7 @@ function Conversation({
      serving them, so the row must not advertise one that no longer resolves. */
   const { data: startupConfig } = useGetStartupConfig();
   const sharedLinksEnabled = startupConfig?.sharedLinksEnabled === true;
+  const pinnedChatsEnabled = startupConfig?.interface?.pinnedChats !== false;
   const isSharedBadgeVisible = conversation.isShared === true && sharedLinksEnabled;
   const isShiftHeld = useShiftKey();
   const { conversationId, title = '' } = conversation;
@@ -261,7 +262,7 @@ function Conversation({
       {isSharedBadgeVisible && (
         <Link2 className="icon-sm mr-1 shrink-0 text-text-secondary" aria-hidden="true" />
       )}
-      {conversation.pinned === true && (
+      {conversation.pinned === true && pinnedChatsEnabled && (
         <Pin className="icon-sm mr-1 shrink-0 text-text-primary" aria-hidden="true" />
       )}
       <div

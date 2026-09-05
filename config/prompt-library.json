@@ -1,0 +1,86 @@
+[
+  {
+    "name": "Cost report",
+    "input": "Can I have a cost report for {{Client}} from {{StartDate}} to {{EndDate}}?",
+    "description": "Full cost report for a client over a date range",
+    "command": "cost-report"
+  },
+  {
+    "name": "Monthly lease cost",
+    "input": "Show {{Client}} {{Country}} lease costs per month from {{StartDate}} to {{EndDate}}.",
+    "description": "Monthly lease costs for a client in a country",
+    "command": "lease-cost-monthly"
+  },
+  {
+    "name": "Vehicle off-hire check",
+    "input": "Has vehicle {{Registration}} been off-hired?",
+    "description": "Check whether a vehicle has been off-hired",
+    "command": "vehicle-offhired"
+  },
+  {
+    "name": "Full vehicle history",
+    "input": "Give me a full vehicle history for {{Registration}} including allocation details.",
+    "description": "Full allocation and cost history for a registration",
+    "command": "vehicle-history"
+  },
+  {
+    "name": "Vehicle spend history",
+    "input": "Get me the spend history for {{Registration}}.",
+    "description": "Spend history for a vehicle registration",
+    "command": "vehicle-spend"
+  },
+  {
+    "name": "Contract end date",
+    "input": "What is the contract end date for {{Registration}}?",
+    "description": "Contract end date for a single vehicle",
+    "command": "contract-end-date"
+  },
+  {
+    "name": "Vehicles ending or renewals",
+    "input": "Which {{Client}} vehicles are due to end between {{StartDate}} and {{EndDate}}?",
+    "description": "List vehicles ending or due for renewal in a date window",
+    "command": "vehicles-ending"
+  },
+  {
+    "name": "Live fleet count",
+    "input": "How many live vehicles does {{Client}} have in {{Country}}?",
+    "description": "Count of active vehicles for a client in a country",
+    "command": "live-fleet-count"
+  },
+  {
+    "name": "Fleet split by country",
+    "input": "Show {{Client}}'s live fleet broken down by country.",
+    "description": "Live fleet count per country for a client",
+    "command": "fleet-by-country"
+  },
+  {
+    "name": "Fleet split by fuel type",
+    "input": "Break down {{Client}}'s live fleet by fuel type.",
+    "description": "Live fleet split by fuel type",
+    "command": "fleet-by-fuel"
+  },
+  {
+    "name": "Current driver",
+    "input": "Who is currently allocated to {{Registration}}?",
+    "description": "Current driver or allocation for a vehicle",
+    "command": "current-driver"
+  },
+  {
+    "name": "Employee vehicle",
+    "input": "Which vehicle is {{EmployeeName}} allocated to?",
+    "description": "Find the vehicle allocated to an employee",
+    "command": "employee-vehicle"
+  },
+  {
+    "name": "Export to file",
+    "input": "Export the {{ReportName}} as a {{Format:Excel|CSV}} file.",
+    "description": "Export a report as an Excel or CSV file",
+    "command": "export-file"
+  },
+  {
+    "name": "Fuel, EV or CO2 trend",
+    "input": "Show the {{Metric:Fuel spend|EV count|CO2}} trend for {{Client}} year on year.",
+    "description": "Year-on-year trend for fuel spend, EV count or CO2",
+    "command": "fuel-ev-co2"
+  }
+]

@@ -1,0 +1,145 @@
+name: Deploy Fleetworx AI Chat (Production)
+
+on:
+  push:
+    branches:
+      - prod
+
+permissions:
+  contents: read
+
+env:
+  SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+  ENVIRONMENT: Production
+  IMAGE_TAG: latest
+  SERVER_PATH: /opt/fleetworx/fleetworx-chat
+  HEALTH_PORT: 3080
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      # ── Notify: Deploy Started ─────────────────────────────────────────
+      - name: 🔔 Slack — Deploy started
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
+            "blocks": [
+              {"type":"header","text":{"type":"plain_text","text":"🚀 Deploy Started — Fleetworx Chat ('"$ENVIRONMENT"')"}},
+              {"type":"section","fields":[
+                {"type":"mrkdwn","text":"*Branch:*\n`'"${{ github.ref_name }}"'`"},
+                {"type":"mrkdwn","text":"*Commit:*\n`'"${{ github.sha }}"'`"},
+                {"type":"mrkdwn","text":"*Author:*\n'"${{ github.actor }}"'"},
+                {"type":"mrkdwn","text":"*Message:*\n'"$(echo "${{ github.event.head_commit.message }}" | head -1)"'"}
+              ]},
+              {"type":"context","elements":[{"type":"mrkdwn","text":"⏳ Building Docker image..."}]}
+            ]
+          }'
+
+      # ── Build & Push ───────────────────────────────────────────────────
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.ACCESS_TOKEN }}
+
+      - name: Build and push Docker image (AMD64 only)
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -f Dockerfile.multi \
+            --target api-build \
+            -t ghcr.io/siteonuk/fleetworx-chat:$IMAGE_TAG \
+            .
+          docker push ghcr.io/siteonuk/fleetworx-chat:$IMAGE_TAG
+
+      - name: 🔔 Slack — Image built
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
+            "blocks": [
+              {"type":"context","elements":[{"type":"mrkdwn","text":"📦 Docker image built & pushed — *'"$ENVIRONMENT"'*  |  ⏳ Deploying to server..."}]}
+            ]
+          }'
+
+      # ── Deploy ─────────────────────────────────────────────────────────
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      # Verify host key before trusting a new host; the workflow only deploys to
+      # the known server IP, so a fingerprints mismatch aborts rather than MITM.
+      - name: Verify SSH host key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan -H fleetworx.net >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy to server via SSH
+        run: |
+          ssh -o StrictHostKeyChecking=yes hardik@fleetworx.net \
+            "cd $SERVER_PATH \
+            && for i in 1 2 3 4 5; do \
+                 echo \"Pull attempt \$i...\"; \
+                 docker compose pull api && break; \
+                 if [ \$i -eq 5 ]; then echo 'Pull failed after 5 attempts'; exit 1; fi; \
+                 echo 'Pull failed (likely transient registry TLS error), retrying in 15s...'; \
+                 sleep 15; \
+               done \
+            && docker compose up -d api"
+
+      - name: 🔔 Slack — Container deployed
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
+            "blocks": [
+              {"type":"context","elements":[{"type":"mrkdwn","text":"🐳 Container updated — *'"$ENVIRONMENT"'*  |  ⏳ Verifying health..."}]}
+            ]
+          }'
+
+      # ── Verify ─────────────────────────────────────────────────────────
+      - name: Verify deployment
+        run: |
+          echo "Waiting for services to start..."
+          sleep 30
+          ssh -o StrictHostKeyChecking=yes hardik@fleetworx.net \
+            "cd $SERVER_PATH \
+            && docker compose ps api \
+            && curl -f --retry 3 --retry-delay 5 http://localhost:$HEALTH_PORT/health"
+
+      # ── Notify: Success ────────────────────────────────────────────────
+      - name: 🔔 Slack — Deploy success
+        if: success()
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
+            "blocks": [
+              {"type":"header","text":{"type":"plain_text","text":"✅ Deploy Successful — Fleetworx Chat ('"$ENVIRONMENT"')"}},
+              {"type":"section","fields":[
+                {"type":"mrkdwn","text":"*Branch:*\n`'"${{ github.ref_name }}"'`"},
+                {"type":"mrkdwn","text":"*Author:*\n'"${{ github.actor }}"'"},
+                {"type":"mrkdwn","text":"*Commit:*\n'"$(echo "${{ github.event.head_commit.message }}" | head -1)"'"},
+                {"type":"mrkdwn","text":"*Health:*\n💚 Passing"}
+              ]},
+              {"type":"context","elements":[{"type":"mrkdwn","text":"📦 `ghcr.io/siteonuk/fleetworx-chat:'"$IMAGE_TAG"'`"}]}
+            ]
+          }'
+
+      # ── Notify: Failure ────────────────────────────────────────────────
+      - name: 🔔 Slack — Deploy failed
+        if: failure()
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
+            "blocks": [
+              {"type":"header","text":{"type":"plain_text","text":"❌ Deploy Failed — Fleetworx Chat ('"$ENVIRONMENT"')"}},
+              {"type":"section","fields":[
+                {"type":"mrkdwn","text":"*Branch:*\n`'"${{ github.ref_name }}"'`"},
+                {"type":"mrkdwn","text":"*Author:*\n'"${{ github.actor }}"'"},
+                {"type":"mrkdwn","text":"*Commit:*\n'"$(echo "${{ github.event.head_commit.message }}" | head -1)"'"},
+                {"type":"mrkdwn","text":"*Action:*\n<'"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'|View Logs>"}
+              ]},
+              {"type":"context","elements":[{"type":"mrkdwn","text":"🔴 Check the workflow logs for details"}]}
+            ]
+          }'

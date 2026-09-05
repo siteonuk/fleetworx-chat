@@ -3,6 +3,8 @@ const assistants = require('./assistants');
 const categories = require('./categories');
 const adminAuth = require('./admin/auth');
 const adminConfig = require('./admin/config');
+const adminCodeEnvironments = require('./admin/code');
+const codeEnvironments = require('./code-environments');
 const adminLangfuse = require('./admin/langfuse');
 const adminGrants = require('./admin/grants');
 const adminGroups = require('./admin/groups');
@@ -15,7 +17,6 @@ const staticRoute = require('./static');
 const messages = require('./messages');
 const memories = require('./memories');
 const presets = require('./presets');
-const projects = require('./projects');
 const prompts = require('./prompts');
 const schedules = require('./schedules');
 const skills = require('./skills');
@@ -47,6 +48,8 @@ module.exports = {
   auth,
   adminAuth,
   adminConfig,
+  adminCodeEnvironments,
+  codeEnvironments,
   adminLangfuse,
   adminGrants,
   adminGroups,
@@ -69,7 +72,6 @@ module.exports = {
   config,
   models,
   prompts,
-  projects,
   schedules,
   skills,
   actions,
