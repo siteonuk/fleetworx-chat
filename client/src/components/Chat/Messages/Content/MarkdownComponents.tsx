@@ -7,8 +7,10 @@ import {
   triggerDownload,
   resolveInlineMedia,
   toAbsoluteFilePath,
+  extractContent,
 } from '~/utils';
 import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
+import FleetworxChart from '~/components/Messages/Content/Chart';
 import { useCodeBlockContext, useMediaContext } from '~/Providers';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
@@ -44,10 +46,11 @@ export const code: React.ElementType = memo(function MarkdownCode({
   const lang = match && match[1];
   const isMath = lang === 'math';
   const isMermaid = lang === 'mermaid';
+  const isChart = lang === 'chart';
   const isSingleLine = isSingleLineCode(children);
 
   const { getNextIndex, getNextMermaidIndex, resetCounter } = useCodeBlockContext();
-  const blockIndex = useRef(getNextIndex(isMath || isMermaid || isSingleLine)).current;
+  const blockIndex = useRef(getNextIndex(isMath || isMermaid || isChart || isSingleLine)).current;
   /* Mermaid fences do not consume a code-block index, so every one of them in a
    * message would otherwise share `blockIndex` and collapse onto a single
    * artifact id. They carry their own sequence instead. */
@@ -59,6 +62,9 @@ export const code: React.ElementType = memo(function MarkdownCode({
 
   if (isMath) {
     return <>{children}</>;
+  } else if (isChart) {
+    const content = typeof children === 'string' ? children : extractContent(children);
+    return <FleetworxChart>{content}</FleetworxChart>;
   } else if (isMermaid) {
     const content = typeof children === 'string' ? children : String(children);
     return (
@@ -94,6 +100,9 @@ export const codeNoExecution: React.ElementType = memo(function MarkdownCodeNoEx
 
   if (lang === 'math') {
     return children;
+  } else if (lang === 'chart') {
+    const content = typeof children === 'string' ? children : extractContent(children);
+    return <FleetworxChart>{content}</FleetworxChart>;
   } else if (lang === 'mermaid') {
     const content = typeof children === 'string' ? children : String(children);
     return <Mermaid>{content}</Mermaid>;
