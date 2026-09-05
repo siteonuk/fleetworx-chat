@@ -3,15 +3,15 @@ import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
 import {
+  extractContent,
   handleDoubleClick,
   triggerDownload,
   resolveInlineMedia,
   toAbsoluteFilePath,
-  extractContent,
 } from '~/utils';
 import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
-import FleetworxChart from '~/components/Messages/Content/Chart';
 import { useCodeBlockContext, useMediaContext } from '~/Providers';
+import FleetworxChart from '~/components/Messages/Content/Chart';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
