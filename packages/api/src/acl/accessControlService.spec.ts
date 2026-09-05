@@ -1,7 +1,7 @@
 import mongoose, { Types, Model } from 'mongoose';
-import { createModels, createMethods, RoleBits } from '@librechat/data-schemas';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ResourceType, AccessRoleIds, PrincipalType } from 'librechat-data-provider';
+import { createModels, createMethods, logger, RoleBits } from '@librechat/data-schemas';
 import { AccessControlService } from './accessControlService';
 
 // Mock the logger
@@ -689,6 +689,25 @@ describe('AccessControlService', () => {
 
         expect(mockGetUserPrincipals).toHaveBeenCalledWith({ userId, role: 'admin' });
       });
+
+      test('logs principal resolution failures before propagating them', async () => {
+        const error = new Error('principal lookup unavailable');
+        mockGetUserPrincipals.mockRejectedValue(error);
+
+        await expect(
+          service.getResourcePermissionsMap({
+            userId,
+            role: 'user',
+            resourceType: ResourceType.AGENT,
+            resourceIds: [resource1],
+          }),
+        ).rejects.toBe(error);
+
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.stringContaining('Error resolving principals: principal lookup unavailable'),
+          error,
+        );
+      });
     });
   });
 
@@ -807,6 +826,66 @@ describe('AccessControlService', () => {
         });
         expect(otherResourcePerms).toBe(1);
       });
+    });
+  });
+
+  describe('hasPublicAccess', () => {
+    const publicResource = new Types.ObjectId();
+    const privateResource = new Types.ObjectId();
+
+    beforeEach(async () => {
+      await service.grantPermission({
+        principalType: PrincipalType.PUBLIC,
+        principalId: null,
+        resourceType: ResourceType.AGENT,
+        resourceId: publicResource,
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        grantedBy: grantedById,
+      });
+
+      await service.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId: privateResource,
+        accessRoleId: AccessRoleIds.AGENT_OWNER,
+        grantedBy: grantedById,
+      });
+    });
+
+    test('should return true for resource with PUBLIC AclEntry', async () => {
+      const findPublicResourceIdsSpy = jest.spyOn(service['_dbMethods'], 'findPublicResourceIds');
+      const result = await service.hasPublicAccess({
+        resourceType: ResourceType.AGENT,
+        resourceId: publicResource,
+      });
+      expect(result).toBe(true);
+      expect(findPublicResourceIdsSpy).not.toHaveBeenCalled();
+      findPublicResourceIdsSpy.mockRestore();
+    });
+
+    test('should return false for resource with only user AclEntry', async () => {
+      const result = await service.hasPublicAccess({
+        resourceType: ResourceType.AGENT,
+        resourceId: privateResource,
+      });
+      expect(result).toBe(false);
+    });
+
+    test('should return false for non-existent resource', async () => {
+      const result = await service.hasPublicAccess({
+        resourceType: ResourceType.AGENT,
+        resourceId: new Types.ObjectId(),
+      });
+      expect(result).toBe(false);
+    });
+
+    test('should return false for invalid resource type', async () => {
+      const result = await service.hasPublicAccess({
+        resourceType: 'invalid' as ResourceType,
+        resourceId: publicResource,
+      });
+      expect(result).toBe(false);
     });
   });
 

@@ -3,7 +3,6 @@ import { TooltipAnchor } from '@librechat/client';
 import { User, Calendar, EarthIcon, BarChart3 } from 'lucide-react';
 import type { TPromptGroup } from 'librechat-data-provider';
 import { useLocalize, useAuthContext } from '~/hooks';
-import CategoryIcon from '../utils/CategoryIcon';
 
 interface PromptDetailHeaderProps {
   group: TPromptGroup;
@@ -19,11 +18,6 @@ const PromptDetailHeader = ({ group }: PromptDetailHeaderProps) => {
 
   return (
     <div className="flex flex-col gap-3 py-2 sm:flex-row sm:items-center sm:gap-4">
-      {group.category && (
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-secondary">
-          <CategoryIcon category={group.category} className="h-6 w-6" />
-        </div>
-      )}
 
       <div className="min-w-0 flex-1 overflow-hidden">
         <div className="flex min-w-0 items-center gap-2">
@@ -36,7 +30,7 @@ const PromptDetailHeader = ({ group }: PromptDetailHeaderProps) => {
               side="top"
               render={
                 <EarthIcon
-                  className="h-5 w-5 shrink-0 text-green-400"
+                  className="h-5 w-5 shrink-0 text-accent-primary"
                   aria-label={localize('com_ui_sr_global_prompt')}
                 />
               }

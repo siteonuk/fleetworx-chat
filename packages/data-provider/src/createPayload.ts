@@ -2,6 +2,15 @@ import type * as t from './types';
 import { EndpointURLs } from './config';
 import * as s from './schemas';
 
+/** Resolves the browser's IANA timezone so the server can localize prompt variables. */
+function getUserTimezone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export default function createPayload(submission: t.TSubmission) {
   const {
     isEdited,
@@ -15,6 +24,9 @@ export default function createPayload(submission: t.TSubmission) {
     ephemeralAgent,
     endpointOption,
     manualSkills,
+    clientRequestId,
+    recoverySteerId,
+    expectedPredecessorCreatedAt,
   } = submission;
   const { conversationId } = s.tConvoUpdateSchema.parse(conversation);
   const { endpoint: _e, endpointType } = endpointOption as {
@@ -23,7 +35,9 @@ export default function createPayload(submission: t.TSubmission) {
   };
 
   const endpoint = _e as s.EModelEndpoint;
-  let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
+  /** Custom endpoint names are user-defined and may contain `/`, which would
+   * otherwise split into extra path segments and miss the `/:endpoint` route. */
+  let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${encodeURIComponent(endpoint)}`;
   if (s.isAssistantsEndpoint(endpoint)) {
     server =
       EndpointURLs[(endpointType ?? endpoint) as 'assistants' | 'azureAssistants'] +
@@ -42,6 +56,10 @@ export default function createPayload(submission: t.TSubmission) {
     isContinued: !!(isEdited && isContinued),
     ephemeralAgent: s.isAssistantsEndpoint(endpoint) ? undefined : ephemeralAgent,
     manualSkills: s.isAssistantsEndpoint(endpoint) ? undefined : manualSkills,
+    timezone: getUserTimezone(),
+    clientRequestId,
+    recoverySteerId,
+    expectedPredecessorCreatedAt,
   };
 
   return { server, payload };

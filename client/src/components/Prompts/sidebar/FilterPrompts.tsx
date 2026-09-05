@@ -4,7 +4,7 @@ import { ListFilter, User, Share2 } from 'lucide-react';
 import { Dropdown, FilterInput } from '@librechat/client';
 import { SystemCategories } from 'librechat-data-provider';
 import type { Option } from '~/common';
-import { useLocalize, useCategories, useDebounce } from '~/hooks';
+import { useLocalize, useDebounce } from '~/hooks';
 import CreatePromptButton from '../buttons/CreatePromptButton';
 import { usePromptGroupsContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -18,15 +18,14 @@ export default function FilterPrompts({
   dropdownClassName?: string;
 }) {
   const localize = useLocalize();
-  const { name, setName, hasAccess, promptGroups } = usePromptGroupsContext() ?? {};
-  const { categories } = useCategories({ className: 'h-4 w-4', hasAccess });
+  const { name, setName, promptGroups } = usePromptGroupsContext() ?? {};
   const [searchTerm, setSearchTerm] = useState(name || '');
   const [categoryFilter, setCategory] = useRecoilState(store.promptsCategory);
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
   const prevNameRef = useRef(name);
 
   const filterOptions = useMemo(() => {
-    const baseOptions: Option[] = [
+    const options: Option[] = [
       {
         value: SystemCategories.ALL,
         label: localize('com_ui_all_proper'),
@@ -42,20 +41,10 @@ export default function FilterPrompts({
         label: localize('com_ui_shared_prompts'),
         icon: <Share2 className="h-4 w-4 text-text-primary" />,
       },
-      { divider: true, value: null },
     ];
 
-    const categoryOptions = categories
-      ? [...categories]
-      : [
-          {
-            value: SystemCategories.NO_CATEGORY,
-            label: localize('com_ui_no_category'),
-          },
-        ];
-
-    return [...baseOptions, ...categoryOptions];
-  }, [categories, localize]);
+    return options;
+  }, [localize]);
 
   const onSelect = useCallback(
     (value: string) => {
@@ -106,7 +95,8 @@ export default function FilterPrompts({
         value={categoryFilter || SystemCategories.ALL}
         onChange={onSelect}
         options={filterOptions}
-        className={cn('shrink-0 rounded-lg bg-transparent [&>button]:size-9', dropdownClassName)}
+        className={cn('shrink-0 [&>button]:size-9', dropdownClassName)}
+        triggerClassName="rounded-lg bg-transparent"
         icon={<ListFilter className="h-4 w-4" />}
         label="Filter: "
         ariaLabel={localize('com_ui_filter_prompts')}

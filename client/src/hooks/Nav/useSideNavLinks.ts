@@ -7,6 +7,7 @@ import {
   Database,
   NotebookPen,
   ScrollText,
+  CalendarClock,
   ArrowRightToLine,
   SlidersHorizontal,
   MessageSquareQuote,
@@ -31,6 +32,7 @@ import MCPBuilderPanel from '~/components/SidePanel/MCPBuilder/MCPBuilderPanel';
 import AgentPanelSwitch from '~/components/SidePanel/Agents/AgentPanelSwitch';
 import BookmarkPanel from '~/components/SidePanel/Bookmarks/BookmarkPanel';
 import PanelSwitch from '~/components/SidePanel/Builder/PanelSwitch';
+import { SchedulePanel } from '~/components/SidePanel/Schedules';
 import Parameters from '~/components/SidePanel/Parameters/Panel';
 import { MemoryPanel } from '~/components/SidePanel/Memories';
 // FilesPanel removed – Attach Files hidden for all users.
@@ -90,6 +92,10 @@ export default function useSideNavLinks({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.CREATE,
   });
+  const hasAccessToSchedules = useHasAccess({
+    permissionType: PermissionTypes.SCHEDULES,
+    permission: Permissions.USE,
+  });
   const { availableMCPServers } = useMCPServerManager();
 
   const { agentsConfig } = useGetAgentsConfig({ endpointsConfig });
@@ -139,6 +145,26 @@ export default function useSideNavLinks({
         icon: ScrollText,
         id: 'skills',
         Component: SkillsAccordion,
+      });
+    }
+
+    // Scheduled chats are EXPERIMENTAL and default-OFF: the server enables them only
+    // when an admin opts in explicitly, so ABSENT config means disabled here too.
+    // Mirrors getLimits exactly — absent/null/`false` are all off, `true` is on, and the
+    // object form is on unless it sets `use: false`. Any mismatch would show an entry
+    // whose create/run operations the backend rejects.
+    const schedulesConfig = interfaceConfig.schedules;
+    const schedulesEnabled =
+      schedulesConfig != null &&
+      schedulesConfig !== false &&
+      !(typeof schedulesConfig === 'object' && schedulesConfig.use === false);
+    if (hasAccessToSchedules && schedulesEnabled) {
+      links.push({
+        title: 'com_ui_schedules',
+        label: '',
+        icon: CalendarClock,
+        id: 'schedules',
+        Component: SchedulePanel,
       });
     }
 
@@ -230,6 +256,8 @@ export default function useSideNavLinks({
     skillsEnabled,
     hasAccessToMemories,
     hasAccessToReadMemories,
+    hasAccessToSchedules,
+    interfaceConfig.schedules,
     interfaceConfig.parameters,
     endpointType,
     hasAccessToBookmarks,

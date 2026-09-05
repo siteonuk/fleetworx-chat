@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { useRecoilValue } from 'recoil';
-import { Menu, Rocket, X } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import { Menu, Rocket, X } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Button, Skeleton, useToastContext } from '@librechat/client';
+import { Button, Skeleton, useToastContext, useMediaQuery } from '@librechat/client';
 import {
   Permissions,
   ResourceType,
@@ -21,7 +21,6 @@ import {
 } from '~/data-provider';
 import { useResourcePermissions, useHasAccess, useLocalize, useFocusTrap } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
-import CategorySelector from '../fields/CategorySelector';
 import PromptVariables from '../display/PromptVariables';
 import PromptVersions from '../display/PromptVersions';
 import { usePromptGroupsContext } from '~/Providers';
@@ -30,8 +29,8 @@ import DeletePrompt from '../dialogs/DeletePrompt';
 import NoPromptGroup from '../lists/NoPromptGroup';
 import PromptEditor from '../editor/PromptEditor';
 import SkeletonForm from '../utils/SkeletonForm';
-import Description from '../fields/Description';
 import SharePrompt from '../dialogs/SharePrompt';
+import Description from '../fields/Description';
 import PromptName from '../fields/PromptName';
 import { cn, findPromptGroup } from '~/utils';
 import { PromptsEditorMode } from '~/common';
@@ -76,7 +75,7 @@ const VersionsPanel = React.memo(
               className={cn(
                 'w-full gap-1.5 transition-all duration-200',
                 isProductionVersion &&
-                  'border border-green-500/30 bg-green-50 text-green-700 hover:bg-green-100 dark:bg-green-950/30 dark:text-green-400 dark:hover:bg-green-950/50',
+                  'border border-status-success-border bg-status-success-subtle text-status-success hover:bg-status-success-subtle',
               )}
               onClick={() => {
                 if (!selectedPrompt) {
@@ -138,30 +137,24 @@ const VersionsPanel = React.memo(
 VersionsPanel.displayName = 'VersionsPanel';
 
 interface HeaderActionsProps {
-  group: TPromptGroup;
+  group: TPromptGroup | null;
   canEdit: boolean;
   canDelete: boolean;
-  selectedPromptId?: string;
-  onCategoryChange?: (value: string) => void;
+  selectedPromptId: string;
 }
 
 const HeaderActions = React.memo(
-  ({ group, canEdit, canDelete, selectedPromptId, onCategoryChange }: HeaderActionsProps) => {
+  ({ group, canEdit, canDelete, selectedPromptId }: HeaderActionsProps) => {
     const hasShareAccess = useHasAccess({
       permissionType: PermissionTypes.PROMPTS,
       permission: Permissions.SHARE,
     });
 
     const groupId = group?._id || '';
-    const groupCategory = group?.category || '';
     const isLoadingGroup = !group;
 
     return (
       <div className="flex items-center gap-2">
-        <CategorySelector
-          currentCategory={groupCategory}
-          onValueChange={canEdit ? onCategoryChange : undefined}
-        />
         {hasShareAccess && <SharePrompt group={group} disabled={isLoadingGroup} />}
         {canDelete && (
           <DeletePrompt
@@ -187,6 +180,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
   const promptId = promptIdProp || params.promptId || '';
 
   const editorMode = useRecoilValue(store.promptsEditorMode);
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
 
   const prevIsEditingRef = useRef(false);
@@ -412,19 +406,6 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
     [group, updateGroupMutation.mutate, debouncedUpdateCommand],
   );
 
-  const handleCategoryChange = useCallback(
-    (value: string) => {
-      if (!group?._id) {
-        return;
-      }
-      updateGroupMutation.mutate({
-        id: group._id,
-        payload: { name: group.name, category: value },
-      });
-    },
-    [group?._id, group?.name, updateGroupMutation],
-  );
-
   if (initialLoad) {
     return <SkeletonForm />;
   }
@@ -437,7 +418,16 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
     }
 
     if (fetchedPrompt || group) {
-      return <PromptDetails group={fetchedPrompt || group} showActions={false} />;
+      return (
+        <div className="flex h-full w-full flex-col">
+          {isSmallScreen && (
+            <div className="flex shrink-0 items-center px-4 pt-3">
+              <OpenSidebar />
+            </div>
+          )}
+          <PromptDetails group={fetchedPrompt || group} showActions={false} />
+        </div>
+      );
     }
   }
 
@@ -462,15 +452,14 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
             <div className="flex h-full">
               <div className="flex-1 overflow-hidden px-4">
                 {/* Mobile Actions Row */}
-                {!isLoadingGroup && group && (
-                  <div className="mb-3 mt-2 flex items-center justify-between gap-2 sm:hidden">
+                {!isLoadingGroup && group && isSmallScreen && (
+                  <div className="mb-3 mt-2 flex items-center justify-between gap-2">
                     <OpenSidebar />
                     <HeaderActions
                       group={group}
                       canEdit={canEdit}
                       canDelete={canDelete}
                       selectedPromptId={selectedPromptId}
-                      onCategoryChange={handleCategoryChange}
                     />
                   </div>
                 )}
@@ -510,15 +499,16 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
                           </Button>
                         )}
                       </div>
-                      <div className="hidden shrink-0 sm:block">
-                        <HeaderActions
-                          group={group}
-                          canEdit={canEdit}
-                          canDelete={canDelete}
-                          selectedPromptId={selectedPromptId}
-                          onCategoryChange={handleCategoryChange}
-                        />
-                      </div>
+                      {!isSmallScreen && (
+                        <div className="shrink-0">
+                          <HeaderActions
+                            group={group}
+                            canEdit={canEdit}
+                            canDelete={canDelete}
+                            selectedPromptId={selectedPromptId}
+                          />
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
