@@ -141,11 +141,13 @@ export default defineConfig(({ command }) => ({
       },
       includeAssets: [],
       manifest: {
-        name: 'LibreChat',
-        short_name: 'LibreChat',
+        name: 'Fleetworx Chat',
+        short_name: 'Fleetworx',
+        description:
+          'Fleet intelligence for the modern enterprise — total visibility and strategic insight for complex, multi-country fleet operations.',
         display: 'standalone',
-        background_color: '#000000',
-        theme_color: '#009688',
+        background_color: '#ffffff',
+        theme_color: '#0e7c8a',
         icons: [
           {
             src: 'assets/favicon-32x32.png',
