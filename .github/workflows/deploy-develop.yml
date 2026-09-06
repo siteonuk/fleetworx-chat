@@ -21,27 +21,34 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # ── Notify: Deploy Started ─────────────────────────────────────────
       - name: 🔔 Slack — Deploy started
+        env:
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
-            "blocks": [
-              {"type":"header","text":{"type":"plain_text","text":"🚀 Deploy Started — Fleetworx Chat ('"$ENVIRONMENT"')"}},
-              {"type":"section","fields":[
-                {"type":"mrkdwn","text":"*Branch:*\n`'"${{ github.ref_name }}"'`"},
-                {"type":"mrkdwn","text":"*Commit:*\n`'"${{ github.sha }}"'`"},
-                {"type":"mrkdwn","text":"*Author:*\n'"${{ github.actor }}"'"},
-                {"type":"mrkdwn","text":"*Message:*\n'"$(echo "${{ github.event.head_commit.message }}" | head -1)"'"}
+          TITLE="$(printf '%s' "$COMMIT_MSG" | head -1)"
+          PAYLOAD=$(jq -n --arg env "$ENVIRONMENT" --arg branch "$BRANCH" \
+            --arg sha "$SHA" --arg actor "$ACTOR" --arg msg "$TITLE" '{
+            blocks: [
+              {type:"header",text:{type:"plain_text",text:("🚀 Deploy Started — Fleetworx Chat (" + $env + ")")}},
+              {type:"section",fields:[
+                {type:"mrkdwn",text:("*Branch:*\n`" + $branch + "`")},
+                {type:"mrkdwn",text:("*Commit:*\n`" + $sha + "`")},
+                {type:"mrkdwn",text:("*Author:*\n" + $actor)},
+                {type:"mrkdwn",text:("*Message:*\n" + $msg)}
               ]},
-              {"type":"context","elements":[{"type":"mrkdwn","text":"⏳ Building Docker image..."}]}
-            ]
-          }'
+              {type:"context",elements:[{type:"mrkdwn",text:"⏳ Building Docker image..."}]}
+            ]}')
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d "$PAYLOAD"
 
       # ── Build & Push ───────────────────────────────────────────────────
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -67,7 +74,7 @@ jobs:
 
       # ── Deploy ─────────────────────────────────────────────────────────
       - name: Set up SSH agent
-        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
 
@@ -113,33 +120,47 @@ jobs:
       # ── Notify: Success ────────────────────────────────────────────────
       - name: 🔔 Slack — Deploy success
         if: success()
+        env:
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
-            "blocks": [
-              {"type":"header","text":{"type":"plain_text","text":"✅ Deploy Successful — Fleetworx Chat ('"$ENVIRONMENT"')"}},
-              {"type":"section","fields":[
-                {"type":"mrkdwn","text":"*Branch:*\n`'"${{ github.ref_name }}"'`"},
-                {"type":"mrkdwn","text":"*Author:*\n'"${{ github.actor }}"'"},
-                {"type":"mrkdwn","text":"*Commit:*\n'"$(echo "${{ github.event.head_commit.message }}" | head -1)"'"},
-                {"type":"mrkdwn","text":"*Health:*\n💚 Passing"}
+          TITLE="$(printf '%s' "$COMMIT_MSG" | head -1)"
+          PAYLOAD=$(jq -n --arg env "$ENVIRONMENT" --arg branch "$BRANCH" \
+            --arg actor "$ACTOR" --arg msg "$TITLE" \
+            --arg image "ghcr.io/siteonuk/fleetworx-chat:$IMAGE_TAG" '{
+            blocks: [
+              {type:"header",text:{type:"plain_text",text:("✅ Deploy Successful — Fleetworx Chat (" + $env + ")")}},
+              {type:"section",fields:[
+                {type:"mrkdwn",text:("*Branch:*\n`" + $branch + "`")},
+                {type:"mrkdwn",text:("*Author:*\n" + $actor)},
+                {type:"mrkdwn",text:("*Commit:*\n" + $msg)},
+                {type:"mrkdwn",text:"*Health:*\n💚 Passing"}
               ]},
-              {"type":"context","elements":[{"type":"mrkdwn","text":"📦 `ghcr.io/siteonuk/fleetworx-chat:'"$IMAGE_TAG"'`"}]}
-            ]
-          }'
+              {type:"context",elements:[{type:"mrkdwn",text:("📦 `" + $image + "`")}]}
+            ]}')
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d "$PAYLOAD"
 
       # ── Notify: Failure ────────────────────────────────────────────────
       - name: 🔔 Slack — Deploy failed
         if: failure()
+        env:
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d '{
-            "blocks": [
-              {"type":"header","text":{"type":"plain_text","text":"❌ Deploy Failed — Fleetworx Chat ('"$ENVIRONMENT"')"}},
-              {"type":"section","fields":[
-                {"type":"mrkdwn","text":"*Branch:*\n`'"${{ github.ref_name }}"'`"},
-                {"type":"mrkdwn","text":"*Author:*\n'"${{ github.actor }}"'"},
-                {"type":"mrkdwn","text":"*Commit:*\n'"$(echo "${{ github.event.head_commit.message }}" | head -1)"'"},
-                {"type":"mrkdwn","text":"*Action:*\n<'"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'|View Logs>"}
+          TITLE="$(printf '%s' "$COMMIT_MSG" | head -1)"
+          PAYLOAD=$(jq -n --arg env "$ENVIRONMENT" --arg branch "$BRANCH" \
+            --arg actor "$ACTOR" --arg msg "$TITLE" --arg url "$RUN_URL" '{
+            blocks: [
+              {type:"header",text:{type:"plain_text",text:("❌ Deploy Failed — Fleetworx Chat (" + $env + ")")}},
+              {type:"section",fields:[
+                {type:"mrkdwn",text:("*Branch:*\n`" + $branch + "`")},
+                {type:"mrkdwn",text:("*Author:*\n" + $actor)},
+                {type:"mrkdwn",text:("*Commit:*\n" + $msg)},
+                {type:"mrkdwn",text:("*Action:*\n<" + $url + "|View Logs>")}
               ]},
-              {"type":"context","elements":[{"type":"mrkdwn","text":"🔴 Check the workflow logs for details"}]}
-            ]
-          }'
+              {type:"context",elements:[{type:"mrkdwn",text:"🔴 Check the workflow logs for details"}]}
+            ]}')
+          curl -s -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d "$PAYLOAD"
