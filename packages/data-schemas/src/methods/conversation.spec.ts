@@ -105,6 +105,9 @@ const getConvosQueried = (...args: Parameters<ConversationMethods['getConvosQuer
 const deleteNullOrEmptyConversations = (
   ...args: Parameters<ConversationMethods['deleteNullOrEmptyConversations']>
 ) => methods.deleteNullOrEmptyConversations(...args);
+const deleteOldConversations = (
+  ...args: Parameters<ConversationMethods['deleteOldConversations']>
+) => methods.deleteOldConversations(...args);
 const searchConversation = (...args: Parameters<ConversationMethods['searchConversation']>) =>
   methods.searchConversation(...args);
 
@@ -2936,6 +2939,69 @@ describe('Conversation Operations', () => {
     it('returns zero when the user has no conversations', async () => {
       const result = await archiveAllConvos('user123');
       expect(result.archivedCount).toBe(0);
+    });
+  });
+
+  describe('deleteOldConversations', () => {
+    const createConvoAt = async (data: {
+      conversationId: string;
+      user: string;
+      title?: string;
+      pinned?: boolean;
+      updatedAt: Date;
+    }) => {
+      await Conversation.collection.insertOne({
+        conversationId: data.conversationId,
+        user: data.user,
+        title: data.title,
+        endpoint: EModelEndpoint.openAI,
+        pinned: data.pinned ?? false,
+        expiredAt: null,
+        isArchived: false,
+        updatedAt: data.updatedAt,
+        createdAt: data.updatedAt,
+      });
+    };
+
+    it('deletes conversations older than the cutoff', async () => {
+      const oldId = uuidv4();
+      const recentId = uuidv4();
+      const cutoff = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+      await createConvoAt({
+        conversationId: oldId,
+        user: 'user123',
+        title: 'Old Chat',
+        updatedAt: cutoff,
+      });
+      await createConvoAt({
+        conversationId: recentId,
+        user: 'user123',
+        title: 'Recent Chat',
+        updatedAt: new Date(),
+      });
+
+      const result = await deleteOldConversations(30);
+
+      expect(result?.conversations.deletedCount).toBe(1);
+      expect(await Conversation.findOne({ conversationId: oldId })).toBeNull();
+      expect(await Conversation.findOne({ conversationId: recentId })).not.toBeNull();
+    });
+
+    it('never deletes pinned conversations, regardless of age', async () => {
+      const oldPinnedId = uuidv4();
+      const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+      await createConvoAt({
+        conversationId: oldPinnedId,
+        user: 'user123',
+        title: 'Pinned forever',
+        pinned: true,
+        updatedAt: cutoff,
+      });
+
+      const result = await deleteOldConversations(30);
+
+      expect(result?.conversations.deletedCount).toBe(0);
+      expect(await Conversation.findOne({ conversationId: oldPinnedId })).not.toBeNull();
     });
   });
 

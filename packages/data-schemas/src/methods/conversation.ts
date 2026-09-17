@@ -3112,20 +3112,23 @@ export function createConversationMethods(
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const { deleteMessages } = getMessageMethods();
       const cutoffDate = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+      /** Pinned chats are exempt from retention sweeps: deleting them would destroy
+       *  user-pinned work on a timer, so the sweep only targets unpinned chats. */
+      const retentionFilter = { updatedAt: { $lt: cutoffDate }, pinned: { $ne: true } };
 
-      const oldConvos = await Conversation.find(
-        { updatedAt: { $lt: cutoffDate } },
-        'conversationId user',
-      ).lean();
+      const oldConvos = await Conversation.find(retentionFilter, 'conversationId user').lean();
 
       if (!oldConvos.length) {
-        logger.info('[deleteOldConversations] No conversations older than %d days found', maxAgeDays);
+        logger.info(
+          '[deleteOldConversations] No conversations older than %d days found',
+          maxAgeDays,
+        );
         return { conversations: { deletedCount: 0 }, messages: { deletedCount: 0 } };
       }
 
       const conversationIds = oldConvos.map((c) => c.conversationId);
 
-      const convoResult = await Conversation.deleteMany({ updatedAt: { $lt: cutoffDate } });
+      const convoResult = await Conversation.deleteMany(retentionFilter);
       const messageResult = await deleteMessages({ conversationId: { $in: conversationIds } });
 
       logger.info(
