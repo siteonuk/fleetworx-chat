@@ -4,7 +4,12 @@ import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
-import { revokeDownloadURL, useFileDownload, useSharedFileDownload } from '~/data-provider';
+import {
+  revokeDownloadURL,
+  useFileDownload,
+  useFilePreview,
+  useSharedFileDownload,
+} from '~/data-provider';
 import { getFileExtension, getPreviewKind, shouldUseSharedFileDownload } from './preview';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext } from '~/Providers';
@@ -107,10 +112,42 @@ export default function FilePreviewDialog({
   const previewKind = getPreviewKind(fileName, fileType, fileSource);
   const downloadFilename = getDownloadFilename(fileName, fileId, fileSource);
 
+  /* Office types render from the sanitized HTML the backend stored at upload
+   * (`buildOfficePreview`), not from the raw bytes — a .xlsx is a ZIP and a
+   * .csv is unformatted text, neither of which is readable as a document.
+   * Only fetched while the dialog is open for such a file. */
+  const isOfficePreview = previewKind === 'office';
+  /* `isInitialLoading`, not `isLoading`: in React Query v4 a DISABLED query
+   * sits at `status: 'loading'` forever (it has no data and never fetches), so
+   * `isLoading` stays true for every non-office file and pinned a permanent
+   * "Loading…" banner above the PDF viewer. `isInitialLoading` is
+   * `isLoading && isFetching`, which is false while disabled. */
+  const { data: officePreview, isInitialLoading: officePreviewLoading } = useFilePreview(
+    isOfficePreview ? fileId : undefined,
+    { enabled: isOfficePreview && open && !!fileId },
+    shareId,
+  );
+  /* The `textFormat: 'html'` trust signal is required before injecting into
+   * the iframe, mirroring the gate in `detectArtifactTypeFromFile`. Without
+   * it (older records, or a file whose conversion failed) we fall back to the
+   * raw-bytes path rather than trusting unlabelled text as markup. */
+  const officeHtml =
+    officePreview?.status === 'ready' && officePreview.textFormat === 'html'
+      ? officePreview.text
+      : null;
+  const officePreviewFailed = isOfficePreview && !officePreviewLoading && !officeHtml;
+
   const cancelledRef = useRef(false);
 
   const loadPreview = useCallback(async () => {
     if (!fileId || !previewKind || loadingRef.current) {
+      return;
+    }
+    /* Office types are served from the stored HTML preview, never from the
+     * raw bytes: dumping a .xlsx (a ZIP) into the text pane produced pages of
+     * mojibake. When no HTML exists we show "preview unavailable" and leave
+     * the user the Download button, which is the honest outcome. */
+    if (isOfficePreview) {
       return;
     }
     loadingRef.current = true;
@@ -159,7 +196,7 @@ export default function FilePreviewDialog({
         setLoading(false);
       }
     }
-  }, [fileId, previewKind, previewFile]);
+  }, [fileId, previewKind, previewFile, isOfficePreview]);
 
   const handleDownload = useCallback(async () => {
     if (!fileId) {
@@ -254,10 +291,31 @@ export default function FilePreviewDialog({
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">
-          {loading && (
+          {(loading || officePreviewLoading) && (
             <div className="flex h-60 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="shimmer text-sm text-text-secondary">
                 {localize('com_ui_loading')}
+              </span>
+            </div>
+          )}
+          {officeHtml != null && (
+            /* `sandbox` without `allow-same-origin` puts the document in an
+             * opaque origin: no cookies, no storage, no reach into this page.
+             * `allow-scripts` is needed for the sheet-tab strip the backend
+             * emits for multi-sheet workbooks, and is safe precisely because
+             * same-origin is withheld. The HTML itself was already sanitized
+             * server-side by `sanitizeOfficeHtml`. */
+            <iframe
+              srcDoc={officeHtml}
+              sandbox="allow-scripts"
+              title={`${localize('com_ui_preview')}: ${fileName}`}
+              className="h-[70vh] w-full rounded-lg border border-border-light bg-white"
+            />
+          )}
+          {officePreviewFailed && (
+            <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
+              <span className="text-sm text-text-secondary">
+                {localize('com_ui_preview_unavailable')}
               </span>
             </div>
           )}
@@ -293,7 +351,7 @@ export default function FilePreviewDialog({
               </div>
             </>
           )}
-          {!previewKind && !loading && (
+          {!previewKind && !loading && !isOfficePreview && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
