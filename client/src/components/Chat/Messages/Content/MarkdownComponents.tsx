@@ -12,6 +12,7 @@ import {
 import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
 import { useCodeBlockContext, useMediaContext } from '~/Providers';
 import FleetworxChart from '~/components/Messages/Content/Chart';
+import { AGENT_FILE_LINK, useOpenAgentFile } from './agentFiles';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
@@ -146,7 +147,26 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
   }, [user?.id, href]);
 
   const { refetch: downloadFile } = useFileDownload(user?.id ?? '', file_id, { direct: false });
+  const openAgentFile = useOpenAgentFile();
   const props: { target?: string; onClick?: React.MouseEventHandler } = { target: '_blank' };
+
+  /* A cost file or export from the Fleetworx agent opens as a table in the
+   * right-side panel; the plain link is the fallback when no preview can be
+   * made. */
+  const agentFile = !file_id ? href?.match(AGENT_FILE_LINK)?.[1] : undefined;
+  if (agentFile) {
+    const openInPanel = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      if (!(await openAgentFile(href, agentFile))) {
+        window.open(href, '_blank', 'noopener');
+      }
+    };
+    return (
+      <a href={href} onClick={openInPanel} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    );
+  }
 
   if (!file_id || !filename) {
     return (

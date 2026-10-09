@@ -518,12 +518,25 @@ const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean =
     isDocumentSupportedProvider(currentProvider) ||
     isAzureWithResponsesApi
   ) {
-    /** Custom endpoints that the admin opened up (permissive config) honor that allowlist,
-     * matching the file picker; an inherited default config is not treated as opened up. */
+    /** Custom endpoints that the admin opened up honor that allowlist, matching the
+     * file picker; an inherited default config is not treated as opened up.
+     *
+     * `isPermissiveMimeConfig` alone is too narrow a test for "opened up": it probes
+     * the patterns with a junk mime type, so it only recognises WILDCARD allowlists.
+     * A precise one — e.g. pdf + xlsx/xls/csv for an invoice-processing endpoint —
+     * never matches the probe, so drag-and-drop fell through to the default below
+     * (images + pdf only) and rejected spreadsheets that the file picker accepted.
+     * Same file, same endpoint, two different answers depending on how you attached it.
+     *
+     * An entry for this endpoint under `fileConfig.endpoints` is the more direct
+     * signal the probe was standing in for: it exists only because an admin wrote
+     * it, whereas an inherited default leaves the endpoint absent. */
+    const hasExplicitEndpointConfig =
+      ctx.endpoint != null && ctx.fileConfig?.endpoints?.[ctx.endpoint] != null;
     if (
       ctx.endpointType === EModelEndpoint.custom &&
       ctx.endpointSupportedMimeTypes != null &&
-      isPermissiveMimeConfig(ctx.endpointSupportedMimeTypes)
+      (hasExplicitEndpointConfig || isPermissiveMimeConfig(ctx.endpointSupportedMimeTypes))
     ) {
       return checkType(type, ctx.endpointSupportedMimeTypes);
     }
