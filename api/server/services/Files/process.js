@@ -25,6 +25,8 @@ const {
   processAudioFile,
   extractInspectableFileText,
   assertExtractedTextInspectable,
+  bufferToOfficeHtml,
+  hasOfficeHtmlPath,
   getFileExtractionLogDetails,
   getUploadExtractedTextPlan,
   UPLOAD_EXTRACTED_TEXT_PLANS,
@@ -568,6 +570,43 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
  * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
  * @returns {Promise<void>}
  */
+/**
+ * Sanitized HTML preview for an office upload (CSV/XLS/XLSX/ODS/DOCX/PPTX),
+ * so the client can render a real spreadsheet/document instead of the raw
+ * file. Both the converter and the viewer already existed — only the
+ * code-execution path ever called them, which is why a chat attachment showed
+ * a CSV as unformatted text and an .xlsx as binary noise.
+ *
+ * Returns null for anything that isn't an office type, and also whenever the
+ * conversion fails or yields nothing. Failure is deliberately non-fatal: the
+ * upload still succeeds with no preview. A broken preview must never cost the
+ * user their attachment, and the agent reads the original bytes off disk, so
+ * extraction is unaffected by what is (or isn't) stored here.
+ *
+ * @param {Express.Multer.File} file
+ * @returns {Promise<{ text: string, textFormat: 'html' } | null>}
+ */
+const buildOfficePreview = async (file) => {
+  if (!file?.path || !hasOfficeHtmlPath(file.originalname, file.mimetype)) {
+    return null;
+  }
+  try {
+    const html = await bufferToOfficeHtml(
+      await fs.promises.readFile(file.path),
+      file.originalname,
+      file.mimetype,
+    );
+    if (html == null) {
+      logger.warn(`[buildOfficePreview] No HTML produced for "${file.originalname}"`);
+      return null;
+    }
+    return { text: html, textFormat: 'html' };
+  } catch (error) {
+    logger.warn(`[buildOfficePreview] Failed for "${file.originalname}":`, error?.message);
+    return null;
+  }
+};
+
 const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   const appConfig = req.config;
   const isAssistantUpload = isAssistantsEndpoint(metadata.endpoint);
@@ -775,6 +814,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       filepath,
       type = 'text/plain',
       isTranscript = false,
+      textFormat,
     }) => {
       if (!isTranscript) {
         assertExtractedTextInspectable({
@@ -821,6 +861,16 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       const fileInfo = {
         ...removeNullishValues({
           text,
+          /* Only set for office types, where `text` is a sanitized HTML
+           * document rather than plain text. The client refuses to render
+           * `text` as HTML without it (see file.ts textFormat contract), and
+           * `removeNullishValues` drops it for every other upload. */
+          textFormat,
+          /* Mirrors the deferred-preview lifecycle the code-execution path
+           * uses. Here the HTML is already in hand, so the record is born
+           * 'ready' — GET /files/:file_id/preview serves it on the first poll
+           * instead of the client waiting out a pending state. */
+          status: textFormat === 'html' ? 'ready' : undefined,
           bytes,
           file_id,
           temp_file_id,
@@ -964,6 +1014,16 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       });
     }
 
+    const officePreview = await buildOfficePreview(file);
+    if (officePreview) {
+      return await createTextFile({
+        text: officePreview.text,
+        textFormat: officePreview.textFormat,
+        bytes: file.size,
+        type: file.mimetype,
+      });
+    }
+
     const { text, bytes } = await extractInspectableFileText({
       filters: appConfig?.filters,
       extract: () => parseText({ req, file, file_id }),
@@ -1067,6 +1127,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     messageAttachment,
     tool_resource,
   });
+  /* Stored-file uploads (the path a chat attachment takes) keep the original
+   * bytes and never extract anything, so a CSV/XLSX had no `text` at all and
+   * the viewer fell back to dumping the raw file — readable for a CSV, binary
+   * noise for an .xlsx. Attach the same sanitized HTML preview the
+   * code-execution path builds so the client renders a real spreadsheet. */
+  const officePreview = isImage ? null : await buildOfficePreview(file);
   const fileInfo = {
     ...removeNullishValues({
       user: req.user.id,
@@ -1074,6 +1140,9 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       temp_file_id,
       bytes,
       filepath,
+      text: officePreview?.text,
+      textFormat: officePreview?.textFormat,
+      status: officePreview ? 'ready' : undefined,
       ...storageMetadata,
       filename: filename ?? sanitizeFilename(file.originalname),
       context: messageAttachment ? FileContext.message_attachment : FileContext.agents,

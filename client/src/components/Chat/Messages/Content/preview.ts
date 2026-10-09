@@ -1,6 +1,34 @@
-import { FileSources } from 'librechat-data-provider';
+import { FileSources, excelMimeTypes } from 'librechat-data-provider';
 
-type PreviewKind = 'pdf' | 'text' | false;
+export type PreviewKind = 'pdf' | 'text' | 'office' | false;
+
+/**
+ * Office documents the backend renders to a sanitized HTML preview on upload
+ * (`buildOfficePreview` -> `bufferToOfficeHtml`). Kept as extensions rather
+ * than MIME alone because browsers are unreliable at typing these: the same
+ * .xls arrives as `application/vnd.ms-excel`, `application/x-xls` or
+ * `application/octet-stream` depending on the OS.
+ */
+const OFFICE_EXTENSIONS = new Set(['csv', 'xls', 'xlsx', 'xlsm', 'ods', 'docx', 'pptx']);
+
+const OFFICE_MIME_PATTERN =
+  /^(text\/csv|application\/csv|text\/comma-separated-values|application\/vnd\.oasis\.opendocument\.spreadsheet|application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation))$/i;
+
+/**
+ * True when the backend would have produced an HTML preview for this file.
+ *
+ * MUST be tested before {@link getPreviewKindByMime}: that function matches
+ * `mime.includes('xml')`, and every OOXML type contains "xml" twice over
+ * (`openxmlformats`, `spreadsheetml`). An .xlsx therefore matched as 'text'
+ * and the dialog rendered the raw ZIP container as mojibake.
+ */
+function isOfficePreviewType(fileName: string, mime?: string): boolean {
+  const normalized = (mime ?? '').split(';')[0].trim().toLowerCase();
+  if (normalized && (OFFICE_MIME_PATTERN.test(normalized) || excelMimeTypes.test(normalized))) {
+    return true;
+  }
+  return OFFICE_EXTENSIONS.has(getFileExtension(fileName));
+}
 
 const TEXT_EXTENSIONS = new Set([
   'txt',
@@ -72,6 +100,12 @@ export function getPreviewKind(
   fileType?: string,
   fileSource?: string,
 ): PreviewKind {
+  /* Before every other branch, including the `FileSources.text` shortcut: a
+   * spreadsheet stored as extracted text is still better shown as a table,
+   * and the MIME branch below would mis-claim OOXML types as plain text. */
+  if (isOfficePreviewType(fileName, fileType)) {
+    return 'office';
+  }
   if (fileSource === FileSources.text) {
     return 'text';
   }

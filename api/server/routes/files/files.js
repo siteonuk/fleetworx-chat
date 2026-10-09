@@ -18,6 +18,7 @@ const {
   assertUploadContentAllowed,
   hasActiveFilePolicy,
   sanitizeFilename,
+  bufferToOfficeHtml,
 } = require('@librechat/api');
 const {
   Time,
@@ -429,6 +430,58 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
  * `pending` past it is definitively orphaned. Tighter than the boot
  * sweep (5min) since this runs per-request, not per-instance. */
 const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
+
+/** Files the Fleetworx agent writes (cost files, exports): a plain name, no path. */
+const AGENT_EXPORT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,200}\.(csv|xlsx|xls)$/i;
+const AGENT_EXPORT_MIME = {
+  csv: 'text/csv',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xls: 'application/vnd.ms-excel',
+};
+
+/**
+ * Table preview of a file the Fleetworx agent produced, for the file card the
+ * chat shows in place of its download link.
+ *
+ * The agent writes into a volume this server already serves at /files, so the
+ * file is read from there. `FLEETWORX_AGENT_FILES_URL` is a fallback for
+ * setups where the volume is not shared (local development). Only a bare file
+ * name is accepted, so neither source can be steered elsewhere.
+ *
+ * @route GET /files/agent-export/:name/preview
+ */
+router.get('/agent-export/:name/preview', async (req, res) => {
+  const { name } = req.params;
+  if (!AGENT_EXPORT_NAME.test(name) || name.includes('..')) {
+    return res.status(400).json({ message: 'Invalid file name' });
+  }
+  const ext = name.split('.').pop().toLowerCase();
+  try {
+    let buffer = null;
+    const dir = req.config?.paths?.files;
+    if (dir) {
+      buffer = await fs.readFile(require('path').join(dir, name)).catch(() => null);
+    }
+    const base = process.env.FLEETWORX_AGENT_FILES_URL;
+    if (!buffer && base) {
+      const resp = await fetch(`${base.replace(/\/+$/, '')}/${encodeURIComponent(name)}`);
+      if (resp.ok) {
+        buffer = Buffer.from(await resp.arrayBuffer());
+      }
+    }
+    if (!buffer) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+    const html = await bufferToOfficeHtml(buffer, name, AGENT_EXPORT_MIME[ext]);
+    if (html == null) {
+      return res.status(200).json({ status: 'failed' });
+    }
+    return res.status(200).json({ status: 'ready', text: html, textFormat: 'html' });
+  } catch (error) {
+    logger.error('[/files/agent-export/:name/preview] Error building preview:', error);
+    return res.status(500).json({ message: 'Error building preview' });
+  }
+});
 
 /**
  * Poll the lifecycle status of a code-execution file's inline preview.
